@@ -22,11 +22,12 @@ export const Login: React.FC<{ mode: 'masuk' | 'daftar'; invite?: string }> = ({
   const [inv, setInv] = useState<{ email: string; workspace_name: string } | null>(null);
 
   // Google OAuth 2.0 Client ID state
+  const DEFAULT_GOOGLE_CLIENT_ID = '995698868481-o9re5ai2jm1ccnnamri95c3s68hdctmh.apps.googleusercontent.com';
   const [clientId, setClientId] = useState<string>(() => {
     return (
       (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID ||
       localStorage.getItem('rampung_google_client_id') ||
-      ''
+      DEFAULT_GOOGLE_CLIENT_ID
     );
   });
   const [showConfigModal, setShowConfigModal] = useState(false);

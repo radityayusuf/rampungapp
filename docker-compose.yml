@@ -22,9 +22,10 @@ services:
     environment:
       PORT: 8000
       DATABASE_URL: "mysql://root:rootpassword@db:3306/rampung"
-      CORS_ORIGIN: "http://localhost:3000,http://127.0.0.1:3000,http://localhost"
+      CORS_ORIGIN: "http://localhost:3000,http://127.0.0.1:3000,http://localhost,https://rampung.biz,http://rampung.biz"
       FRONTEND_URL: "http://localhost:3000"
       AUTH_THROTTLE: 200
+      GOOGLE_CLIENT_ID: "995698868481-o9re5ai2jm1ccnnamri95c3s68hdctmh.apps.googleusercontent.com"
     volumes:
       - backend-uploads:/app/uploads
     depends_on:
