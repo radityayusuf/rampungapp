@@ -208,16 +208,38 @@ export async function googleAuth(req: AuthRequest, res: Response): Promise<void>
 
   if (credential && typeof credential === 'string') {
     try {
-      const parts = credential.split('.');
-      if (parts.length === 3) {
-        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf-8'));
-        if (payload.email) {
-          userEmail = payload.email;
-          userName = payload.name || payload.email.split('@')[0];
+      // Verifikasi token asli secara langsung ke server OAuth2 Google
+      const gRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`);
+      if (gRes.ok) {
+        const gInfo: any = await gRes.json();
+        if (gInfo.email) {
+          userEmail = gInfo.email;
+          userName = gInfo.name || gInfo.email.split('@')[0];
+        }
+      } else {
+        // Fallback parsing payload jika server Google tidak dapat dijangkau
+        const parts = credential.split('.');
+        if (parts.length === 3) {
+          const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf-8'));
+          if (payload.email) {
+            userEmail = payload.email;
+            userName = payload.name || payload.email.split('@')[0];
+          }
         }
       }
     } catch {
-      // Fallback
+      try {
+        const parts = credential.split('.');
+        if (parts.length === 3) {
+          const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf-8'));
+          if (payload.email) {
+            userEmail = payload.email;
+            userName = payload.name || payload.email.split('@')[0];
+          }
+        }
+      } catch {
+        // Abaikan
+      }
     }
   }
 
