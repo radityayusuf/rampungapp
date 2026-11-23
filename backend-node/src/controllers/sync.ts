@@ -10,7 +10,7 @@ export const COLLECTIONS = [
 
 export type CollectionName = typeof COLLECTIONS[number];
 
-const ADMIN_ONLY: string[] = ['workspace', 'automations', 'invoices', 'expenses', 'clients', 'deals'];
+const ADMIN_ONLY: string[] = ['workspace', 'automations', 'invoices', 'expenses'];
 const OWN_ONLY: string[] = ['timeEntries', 'attendances'];
 
 async function existingOwner(workspaceId: bigint, collection: string, rid: string): Promise<string | null> {
