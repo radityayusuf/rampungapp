@@ -22,11 +22,12 @@ const IntegrationsPage = lazyPage(() => import('./pages/IntegrationsPage'), 'Int
 const PortalPage = lazyPage(() => import('./pages/PortalPage'), 'PortalPage');
 const ForgotPage = lazyPage(() => import('./pages/PasswordPages'), 'ForgotPage');
 const ResetPage = lazyPage(() => import('./pages/PasswordPages'), 'ResetPage');
+const SystemAdminPage = lazyPage(() => import('./pages/SystemAdminPage'), 'SystemAdminPage');
 
 const TITLES: Record<string, string> = {
   landing: 'Dari Ide Sampai Rampung', login: 'Masuk', gabung: 'Gabung ke tim', lupa: 'Lupa kata sandi', reset: 'Kata sandi baru', portal: 'Portal klien',
   beranda: 'Beranda', 'tugas-saya': 'Tugas Saya', inbox: 'Inbox', dashboard: 'Dashboard', proyek: 'Proyek', tugas: 'Tugas', time: 'Time Tracking',
-  crm: 'CRM Klien', keuangan: 'Keuangan', sdm: 'SDM', pengaturan: 'Pengaturan', integrasi: 'Integrasi', notfound: 'Halaman tidak ditemukan',
+  crm: 'CRM Klien', keuangan: 'Keuangan', sdm: 'SDM', pengaturan: 'Pengaturan', integrasi: 'Integrasi', 'admin-sistem': 'Administrator Sistem', notfound: 'Halaman tidak ditemukan',
 };
 
 const Loading: React.FC = () => <div className="flex min-h-[40vh] items-center justify-center text-sm text-arang-muted" role="status">Memuat...</div>;
@@ -81,6 +82,7 @@ export const App: React.FC = () => {
     case 'sdm': body = <SdmPage />; break;
     case 'pengaturan': body = <SettingsPage />; break;
     case 'integrasi': body = <IntegrationsPage />; break;
+    case 'admin-sistem': body = <SystemAdminPage />; break;
   }
   if (!loggedIn) return null;
 

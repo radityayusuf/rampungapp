@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BarChart3, Bell, Columns3, CheckSquare, ChevronDown, Clock, Home, Inbox, LogOut, Menu, Plus, Search, Settings, Sparkles, Store, Users, Wallet, X, UserCheck, Zap } from 'lucide-react';
+import { BarChart3, Bell, Columns3, CheckSquare, ChevronDown, Clock, Home, Inbox, LogOut, Menu, Plus, Search, Settings, Sparkles, Store, Users, Wallet, X, UserCheck, Zap, Shield } from 'lucide-react';
 import { useApp } from '../store/AppContext';
 import { go, href } from '../store/router';
 import type { Route } from '../types';
@@ -34,6 +34,7 @@ const Sidebar: React.FC<{ route: Route; close: () => void }> = ({ route, close }
   const m = workspace.enabledModules;
   const proj = route.page === 'proyek' ? route.projectId : route.page === 'tugas' ? undefined : undefined;
   const planLabel = workspace.plan.charAt(0).toUpperCase() + workspace.plan.slice(1);
+  const isSuperAdmin = me.role === 'superadmin' || me.email === 'admin@rampung.biz' || me.email === 'radityaysf06@gmail.com';
 
   const lock = (k: Parameters<typeof canUseModule>[0]) => (!canUseModule(k) ? <span className="text-xs font-bold text-arang-muted">PRO</span> : null);
 
@@ -98,6 +99,17 @@ const Sidebar: React.FC<{ route: Route; close: () => void }> = ({ route, close }
       </div>
 
       <div className="mt-auto flex flex-col gap-0.5 border-t border-line-soft pt-3">
+        {isSuperAdmin && (
+          <NavLink
+            to={href.adminSistem}
+            active={route.page === 'admin-sistem'}
+            icon={<Shield size={17} className="text-emerald-700" />}
+            onNavigate={close}
+            badge={<span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-black tracking-wide text-emerald-800">MASTER</span>}
+          >
+            Admin Sistem
+          </NavLink>
+        )}
         {m.aiAssistant && <button type="button" onClick={() => { setModal('ai'); close(); }} className="flex min-h-[40px] cursor-pointer items-center gap-2.5 rounded-lg border-0 bg-transparent px-3 text-left text-sm text-arang hover:bg-canvas"><Sparkles size={16} />Asisten AI</button>}
         <NavLink to={href.pengaturan} active={route.page === 'pengaturan'} icon={<Settings size={17} />} onNavigate={close}>Pengaturan</NavLink>
         <SyncBadge />

@@ -84,7 +84,7 @@ const sameSnapshot = (a: Map<string, string>, b: Map<string, string> | null) => 
 };
 
 const PALETTE = ['#B4530B', '#0B7A6B', '#1D5FA8', '#6B46C1', '#9A3F0B', '#0F9D8A'];
-const ROLE_TITLE: Record<string, string> = { owner: 'Pemilik', admin: 'Admin', member: 'Anggota' };
+const ROLE_TITLE: Record<string, string> = { superadmin: 'Superadmin (Platform)', owner: 'Pemilik', admin: 'Admin', member: 'Anggota' };
 
 const memberFromAccount = (acc: ApiUser, idx: number): User => {
   const parts = acc.name.trim().split(/\s+/);

@@ -4,7 +4,7 @@ import { prisma } from '../db';
 import { AuthRequest } from '../types';
 
 function isAdmin(user: any): boolean {
-  return user.role === 'owner' || user.role === 'admin';
+  return user.role === 'owner' || user.role === 'admin' || user.role === 'superadmin';
 }
 
 function randomString(length: number): string {
@@ -47,7 +47,7 @@ export async function members(req: AuthRequest, res: Response): Promise<void> {
 
 export async function updateMember(req: AuthRequest, res: Response): Promise<void> {
   const user = req.user;
-  if (!user || user.role !== 'owner') {
+  if (!user || (user.role !== 'owner' && user.role !== 'superadmin')) {
     res.status(403).json({ message: 'Hanya pemilik yang boleh mengubah peran.' });
     return;
   }

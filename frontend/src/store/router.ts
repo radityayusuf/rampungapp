@@ -38,6 +38,8 @@ export function parseHash(hash: string): Route {
       return { page: 'pengaturan' };
     case 'integrasi':
       return { page: 'integrasi' };
+    case 'admin-sistem':
+      return { page: 'admin-sistem' };
     case 'gabung':
       return { page: 'gabung', token: b ?? '' };
     case 'portal':
@@ -67,6 +69,7 @@ export const href = {
   sdm: '#/sdm',
   pengaturan: '#/pengaturan',
   integrasi: '#/integrasi',
+  adminSistem: '#/admin-sistem',
   gabung: (t: string) => `#/gabung/${t}`,
   portal: (t: string) => `#/portal/${t}`,
   lupa: '#/lupa',

@@ -33,7 +33,7 @@ async function existingOwner(workspaceId: bigint, collection: string, rid: strin
 }
 
 async function denied(user: any, changes: any[]): Promise<string | null> {
-  if (user.role === 'owner' || user.role === 'admin') {
+  if (user.role === 'owner' || user.role === 'admin' || user.role === 'superadmin') {
     return null;
   }
 

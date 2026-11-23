@@ -7,6 +7,7 @@ import * as teamCtrl from '../controllers/team';
 import * as portalCtrl from '../controllers/portal';
 import * as uploadsCtrl from '../controllers/uploads';
 import * as integrationsCtrl from '../controllers/integrations';
+import * as systemCtrl from '../controllers/system';
 
 export const apiRouter = Router();
 
@@ -83,3 +84,9 @@ apiRouter.get('/integrations/whatsapp/status', integrationsCtrl.getWhatsAppStatu
 apiRouter.post('/integrations/ai/breakdown', integrationsCtrl.aiBreakdownTask);
 apiRouter.post('/integrations/ai/summarize', integrationsCtrl.aiSummarizeProject);
 apiRouter.post('/integrations/webhook/send', integrationsCtrl.sendWebhook);
+
+// ─── Panel Admin Sistem (Superadmin) ───
+apiRouter.get('/system/stats', systemCtrl.getSystemStats);
+apiRouter.get('/system/workspaces', systemCtrl.getSystemWorkspaces);
+apiRouter.get('/system/users', systemCtrl.getSystemUsers);
+apiRouter.delete('/system/users/:id', systemCtrl.deleteSystemUser);

@@ -37,7 +37,7 @@ async function call<T>(path: string, init: { method?: string; body?: unknown; au
   return json as T;
 }
 
-export type Role = 'owner' | 'admin' | 'member';
+export type Role = 'owner' | 'admin' | 'member' | 'superadmin' | 'client';
 export interface ApiUser { id: number; name: string; email: string; role: Role; workspace_id: number; workspace_name: string }
 export interface Change { c: string; id: string; data: unknown | null }
 export interface PullResult { empty: boolean; rev: number; collections: Record<string, unknown[]> }
@@ -157,6 +157,46 @@ export const api = {
     call<AiSummarizeResult>('/integrations/ai/summarize', { method: 'POST', body }),
   sendWebhook: (body: { webhookUrl: string; service: 'slack' | 'discord'; title?: string; message: string }) =>
     call<{ status: string; service: string; sentAt: string; message: string }>('/integrations/webhook/send', { method: 'POST', body }),
+
+  // ─── Administrator Sistem (Superadmin) ───
+  getSystemStats: () => call<SystemStats>('/system/stats'),
+  getSystemWorkspaces: () => call<{ workspaces: SystemWorkspace[] }>('/system/workspaces'),
+  getSystemUsers: () => call<{ users: SystemUser[] }>('/system/users'),
+  deleteSystemUser: (id: number) => call<{ message: string }>(`/system/users/${id}`, { method: 'DELETE' }),
 };
+
+export interface SystemStats {
+  totalUsers: number;
+  totalWorkspaces: number;
+  totalRecords: number;
+  totalUploads: number;
+  storageBytes: number;
+  serverUptimeSeconds: number;
+  nodeVersion: string;
+  memoryUsageMB: number;
+  database: string;
+  websocket: string;
+  timestamp: string;
+}
+
+export interface SystemWorkspace {
+  id: number;
+  name: string;
+  ownerName: string;
+  ownerEmail: string;
+  memberCount: number;
+  recordCount: number;
+  createdAt: string;
+}
+
+export interface SystemUser {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  workspaceId: number;
+  workspaceName: string;
+  createdAt: string;
+}
 
 export const API_BASE = BASE;

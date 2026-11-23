@@ -13,7 +13,7 @@ export interface User {
   color: string; // warna avatar
   email: string;
   phone?: string;
-  role: 'owner' | 'admin' | 'member' | 'client';
+  role: 'owner' | 'admin' | 'member' | 'client' | 'superadmin';
   title?: string;
   demo?: boolean; // anggota contoh (bukan akun nyata)
 }
@@ -239,5 +239,6 @@ export type Route =
   | { page: 'gabung'; token: string }
   | { page: 'portal'; token: string }
   | { page: 'lupa' }
+  | { page: 'admin-sistem' }
   | { page: 'notfound' }
   | { page: 'reset'; token: string; email: string };
