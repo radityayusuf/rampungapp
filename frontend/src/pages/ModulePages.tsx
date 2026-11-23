@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Download, Play, Plus, QrCode, Send, Square } from 'lucide-react';
+import { Download, Mail, MessageCircle, Play, Plus, QrCode, Send, Square, Trash2 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp } from '../store/AppContext';
 import { go, href } from '../store/router';
@@ -107,7 +107,7 @@ export const TimePage: React.FC = () => {
 
 /* ---------------- CRM ---------------- */
 export const CrmPage: React.FC<{ tab: 'pipeline' | 'klien' | 'portal' }> = ({ tab }) => {
-  const { workspace, deals, clients, projects, tasks, moveDeal, createDeal, addClient, notify, mode, updateProject, canManage } = useApp();
+  const { workspace, deals, clients, projects, tasks, moveDeal, createDeal, addClient, deleteClient, deleteDeal, notify, mode, updateProject, canManage } = useApp();
   const [open, setOpen] = useState(false);
   const [clientModal, setClientModal] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
@@ -145,7 +145,34 @@ export const CrmPage: React.FC<{ tab: 'pipeline' | 'klien' | 'portal' }> = ({ ta
           {([['pipeline', 'Pipeline'], ['klien', 'Daftar klien'], ['portal', 'Portal klien']] as const).map(([k, l]) => <a key={k} href={href.crm(k)} aria-current={tab === k ? 'page' : undefined} className="flex h-9 items-center rounded-lg px-3.5" style={tab === k ? { background: '#fff', color: '#1F2933', fontWeight: 700 } : { color: '#3D4750' }}>{l}</a>)}
         </div>
         <div className="flex items-center gap-2">
-          {tab === 'klien' && <button type="button" className="btn btn-outline" onClick={() => setClientModal(true)}><Plus size={16} />Klien baru</button>}
+          {tab === 'klien' && (
+            <>
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={() =>
+                  csv('daftar-klien.csv', [
+                    ['Perusahaan', 'Kontak', 'Email', 'Telepon', 'Status', 'Total Deal'],
+                    ...clients.map((c) => [
+                      c.company,
+                      c.contact,
+                      c.email || '',
+                      c.phone || '',
+                      c.status,
+                      String(sum(deals.filter((d) => d.clientId === c.id && d.stage !== 'lost'))),
+                    ]),
+                  ])
+                }
+              >
+                <Download size={15} />
+                Unduh CSV
+              </button>
+              <button type="button" className="btn btn-outline" onClick={() => setClientModal(true)}>
+                <Plus size={16} />
+                Klien baru
+              </button>
+            </>
+          )}
           <button type="button" className="btn btn-primary" onClick={() => setOpen(true)}><Plus size={16} />Deal baru</button>
         </div>
       </PageHeader>
@@ -166,8 +193,11 @@ export const CrmPage: React.FC<{ tab: 'pipeline' | 'klien' | 'portal' }> = ({ ta
                   <div className="flex items-center justify-between gap-2"><span className="text-sm font-bold">{cl(d.clientId)?.company}</span><span className="whitespace-nowrap text-[13px] font-extrabold" style={{ color: '#0B5F54' }}>{rupiahJt(d.value)}</span></div>
                   <span className="text-[13px] leading-snug text-arang-body">{d.need}</span>
                   <div className="flex items-center justify-between gap-2 text-xs text-arang-muted"><span>{cl(d.clientId)?.contact}</span><Pill bg={tone[0]} fg={tone[1]} className="font-bold">{d.nextAction}</Pill></div>
-                  <label className="sr-only" htmlFor={`st-${d.id}`}>Pindah tahap</label>
-                  <select id={`st-${d.id}`} className="input input-sm h-8 text-xs" value={d.stage} onChange={(e) => moveDeal(d.id, e.target.value as DealStage)}>{DEAL_STAGES.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}<option value="lost">Kalah</option></select>
+                  <div className="flex items-center gap-1.5">
+                    <label className="sr-only" htmlFor={`st-${d.id}`}>Pindah tahap</label>
+                    <select id={`st-${d.id}`} className="input input-sm h-8 text-xs flex-1" value={d.stage} onChange={(e) => moveDeal(d.id, e.target.value as DealStage)}>{DEAL_STAGES.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}<option value="lost">Kalah</option></select>
+                    <button type="button" title="Hapus deal" onClick={() => deleteDeal(d.id)} className="btn-icon p-1 text-arang-muted hover:text-red-600 hover:bg-red-50"><Trash2 size={14} /></button>
+                  </div>
                 </div>); })}
               {!ds.length && <span className="py-3 text-center text-[13px] text-arang-muted">Seret deal ke sini</span>}
             </section>); })}
@@ -175,9 +205,9 @@ export const CrmPage: React.FC<{ tab: 'pipeline' | 'klien' | 'portal' }> = ({ ta
       </>}
 
       {tab === 'klien' && (
-        <section className="card overflow-x-auto"><table className="w-full min-w-[720px] border-collapse text-sm">
-          <thead><tr className="text-left text-xs text-arang-muted">{['Klien', 'Kontak', 'Email', 'Telepon', 'Status', 'Nilai deal'].map((h) => <th key={h} className="px-3 py-2.5 font-semibold first:pl-5">{h}</th>)}</tr></thead>
-          <tbody>{clients.map((c) => <tr key={c.id} className="border-t border-line-soft"><td className="py-3 pl-5 pr-3 font-semibold">{c.company}</td><td className="px-3 py-3">{c.contact}</td><td className="px-3 py-3 text-arang-body">{c.email || '–'}</td><td className="px-3 py-3 text-arang-body">{c.phone || '–'}</td><td className="px-3 py-3"><Pill bg={c.status === 'active' ? '#E3F3F0' : c.status === 'lead' ? '#FDF3DC' : '#ECEEEA'} fg={c.status === 'active' ? '#0B5F54' : c.status === 'lead' ? '#6B4A00' : '#3D4750'} className="font-bold">{c.status === 'active' ? 'Aktif' : c.status === 'lead' ? 'Prospek' : 'Lama'}</Pill></td><td className="px-3 py-3 font-bold">{rupiahJt(sum(deals.filter((d) => d.clientId === c.id && d.stage !== 'lost')))}</td></tr>)}</tbody>
+        <section className="card overflow-x-auto"><table className="w-full min-w-[760px] border-collapse text-sm">
+          <thead><tr className="text-left text-xs text-arang-muted">{['Klien', 'Kontak', 'Email', 'Telepon', 'Status', 'Nilai deal', 'Aksi'].map((h) => <th key={h} className="px-3 py-2.5 font-semibold first:pl-5">{h}</th>)}</tr></thead>
+          <tbody>{clients.map((c) => <tr key={c.id} className="border-t border-line-soft"><td className="py-3 pl-5 pr-3 font-semibold">{c.company}</td><td className="px-3 py-3">{c.contact}</td><td className="px-3 py-3 text-arang-body">{c.email || '–'}</td><td className="px-3 py-3 text-arang-body">{c.phone || '–'}</td><td className="px-3 py-3"><Pill bg={c.status === 'active' ? '#E3F3F0' : c.status === 'lead' ? '#FDF3DC' : '#ECEEEA'} fg={c.status === 'active' ? '#0B5F54' : c.status === 'lead' ? '#6B4A00' : '#3D4750'} className="font-bold">{c.status === 'active' ? 'Aktif' : c.status === 'lead' ? 'Prospek' : 'Lama'}</Pill></td><td className="px-3 py-3 font-bold">{rupiahJt(sum(deals.filter((d) => d.clientId === c.id && d.stage !== 'lost')))}</td><td className="px-3 py-3"><div className="flex items-center gap-1.5">{c.phone && <a href={`https://wa.me/${c.phone.replace(/[^0-9]/g, '').replace(/^0/, '62')}`} target="_blank" rel="noreferrer" title="Chat WhatsApp" className="btn-icon p-1 text-emerald-600 hover:bg-emerald-50"><MessageCircle size={15} /></a>}{c.email && <a href={`mailto:${c.email}`} title="Kirim Email" className="btn-icon p-1 text-blue-600 hover:bg-blue-50"><Mail size={15} /></a>}<button type="button" title="Hapus Klien" onClick={() => deleteClient(c.id)} className="btn-icon p-1 text-red-500 hover:bg-red-50"><Trash2 size={15} /></button></div></td></tr>)}</tbody>
         </table></section>
       )}
 
@@ -256,6 +286,25 @@ export const FinancePage: React.FC = () => {
   return (
     <div className={shell}>
       <PageHeader eyebrow="Modul Bisnis" title="Keuangan Proyek">
+        <button
+          type="button"
+          className="btn btn-outline"
+          onClick={() =>
+            csv('daftar-invoice.csv', [
+              ['Nomor', 'Klien', 'Jumlah (Rp)', 'Jatuh Tempo', 'Status'],
+              ...invoices.map((i) => [
+                i.number,
+                client(i.clientId)?.company || '',
+                String(total(i)),
+                i.dueDate,
+                status(i),
+              ]),
+            ])
+          }
+        >
+          <Download size={15} />
+          Unduh CSV
+        </button>
         <button type="button" className="btn btn-outline" onClick={() => setExp(true)}><Plus size={15} />Catat pengeluaran</button>
         <button type="button" className="btn btn-primary" onClick={() => setInv(true)}><Plus size={16} />Buat invoice</button>
       </PageHeader>
@@ -381,7 +430,31 @@ export const SdmPage: React.FC = () => {
   const lt = { pending: ['Menunggu', '#FDF3DC', '#6B4A00'], approved: ['Disetujui', '#E3F3F0', '#0B5F54'], rejected: ['Ditolak', '#FDECEA', '#B42318'] } as const;
   return (
     <div className={shell}>
-      <PageHeader eyebrow="Modul Bisnis" title="SDM"><button type="button" className="btn btn-outline" onClick={() => setOpen(true)}>Ajukan cuti</button></PageHeader>
+      <PageHeader eyebrow="Modul Bisnis" title="SDM">
+        <button
+          type="button"
+          className="btn btn-outline"
+          onClick={() =>
+            csv('daftar-presensi.csv', [
+              ['Tanggal', 'Nama Anggota', 'Jam Masuk', 'Jam Pulang', 'Status'],
+              ...attendances.map((a) => [
+                a.date,
+                user(a.userId)?.name || '',
+                a.checkIn || '',
+                a.checkOut || '',
+                a.status,
+              ]),
+            ])
+          }
+        >
+          <Download size={15} />
+          Unduh CSV
+        </button>
+        <button type="button" className="btn btn-primary" onClick={() => setOpen(true)}>
+          <Plus size={15} />
+          Ajukan cuti
+        </button>
+      </PageHeader>
       <section className="flex flex-wrap items-center justify-between gap-4 rounded-card bg-arang p-5 text-white" style={{ color: '#fff' }}>
         <div className="flex flex-col gap-1"><span className="text-[13px]" style={{ color: '#C9D1D6' }}>Absensi hari ini · {fmtDayDate(today)}</span><span className="text-lg font-bold">{!mine ? 'Belum check-in' : mine.checkOut ? `Selesai · ${mine.checkIn} – ${mine.checkOut}` : `Masuk pukul ${mine.checkIn}`}</span></div>
         {!mine ? <button type="button" className="btn btn-kunyit" onClick={checkIn}>Check-in</button> : !mine.checkOut ? <button type="button" className="btn btn-kunyit" onClick={checkOut}>Check-out</button> : null}

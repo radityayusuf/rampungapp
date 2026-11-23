@@ -22,7 +22,7 @@ export const seedWorkspace: Workspace = {
   id: 'ws-studio-nusa',
   name: 'Studio Nusa',
   plan: 'bisnis',
-  enabledModules: { timeTracking: true, crm: true, finance: true, sdm: false, integrations: true, aiAssistant: true },
+  enabledModules: { timeTracking: true, crm: true, finance: true, sdm: true, integrations: true, aiAssistant: true },
   whatsappConnected: false,
   hourlyRate: 0,
   storageUsedMB: 412,

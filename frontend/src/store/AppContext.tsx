@@ -180,8 +180,11 @@ interface Ctx extends Data {
 
   // crm
   addClient: (c: Omit<Client, 'id'>) => Client;
+  updateClient: (id: string, patch: Partial<Client>) => void;
+  deleteClient: (id: string) => void;
   createDeal: (d: Omit<Deal, 'id' | 'createdAt'>, newClient?: Omit<Client, 'id'>) => void;
   moveDeal: (id: string, stage: DealStage) => void;
+  deleteDeal: (id: string) => void;
 
   // keuangan
   createInvoice: (i: Omit<Invoice, 'id' | 'number' | 'status'>) => Invoice;
@@ -629,6 +632,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return full;
   };
 
+  const updateClient: Ctx['updateClient'] = (id, p) => {
+    patch((d) => ({ clients: d.clients.map((c) => (c.id === id ? { ...c, ...p } : c)) }));
+    notify('Klien diperbarui', undefined, 'success');
+  };
+
+  const deleteClient: Ctx['deleteClient'] = (id) => {
+    patch((d) => ({
+      clients: d.clients.filter((c) => c.id !== id),
+      deals: d.deals.filter((x) => x.clientId !== id),
+    }));
+    notify('Klien dihapus', undefined, 'info');
+  };
+
   const createDeal: Ctx['createDeal'] = (deal, newClient) => {
     const clientId = newClient ? uid('cl') : deal.clientId;
     patch((d) => ({
@@ -644,6 +660,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       confetti({ particleCount: 80, spread: 70 });
       notify('Deal menang!', undefined, 'success');
     }
+  };
+
+  const deleteDeal: Ctx['deleteDeal'] = (id) => {
+    patch((d) => ({ deals: d.deals.filter((x) => x.id !== id) }));
+    notify('Deal dihapus', undefined, 'info');
   };
 
   // ---------- Keuangan ----------
@@ -754,7 +775,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     createProject, updateProject, createSpace,
     timer, timerSeconds, startTimer, stopTimer, addTimeEntry,
     toggleModule, upgradePlan, updateWorkspace, canUseModule,
-    addClient, createDeal, moveDeal, createInvoice, payInvoice, addExpense,
+    addClient, updateClient, deleteClient, createDeal, moveDeal, deleteDeal, createInvoice, payInvoice, addExpense,
     checkIn, checkOut, addLeave, decideLeave,
     addAutomation, toggleAutomation, deleteAutomation, markAllRead, markRead,
     createTaskOpen,
