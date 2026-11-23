@@ -623,7 +623,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // ---------- CRM ----------
   const addClient: Ctx['addClient'] = (c) => {
-    if (!manage()) return {} as Client;
     const full: Client = { ...c, id: uid('cl') };
     patch((d) => ({ clients: [...d.clients, full] }));
     notify('Klien ditambahkan', full.company, 'success');
@@ -631,7 +630,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const createDeal: Ctx['createDeal'] = (deal, newClient) => {
-    if (!manage()) return;
     const clientId = newClient ? uid('cl') : deal.clientId;
     patch((d) => ({
       clients: newClient ? [...d.clients, { ...newClient, id: clientId }] : d.clients,
@@ -641,7 +639,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const moveDeal: Ctx['moveDeal'] = (id, stage) => {
-    if (!manage()) return;
     patch((d) => ({ deals: d.deals.map((x) => (x.id === id ? { ...x, stage, closedAt: stage === 'won' || stage === 'lost' ? new Date().toISOString() : undefined, nextAction: stage === 'won' ? 'Proyek berjalan' : x.nextAction } : x)) }));
     if (stage === 'won') {
       confetti({ particleCount: 80, spread: 70 });

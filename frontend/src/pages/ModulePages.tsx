@@ -118,7 +118,6 @@ export const CrmPage: React.FC<{ tab: 'pipeline' | 'klien' | 'portal' }> = ({ ta
     projects.forEach((p) => { if (p.clientPortalEnabled && !p.portalToken) updateProject(p.id, { portalToken: randomToken() }); });
   }, [projects, updateProject]);
   if (!workspace.enabledModules.crm) return <Locked name="CRM Klien" />;
-  if (!canManage) return <div className={shell}><Empty title="Akses terbatas" text="Modul ini hanya untuk pemilik dan admin workspace." /></div>;
   const cl = (id: string) => clients.find((c) => c.id === id);
   const stageOf = (s: DealStage) => deals.filter((d) => d.stage === s);
   const sum = (ds: typeof deals) => ds.reduce((a, d) => a + d.value, 0);

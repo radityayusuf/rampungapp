@@ -60,6 +60,17 @@ const Sidebar: React.FC<{ route: Route; close: () => void }> = ({ route, close }
       </nav>
 
       <div className="flex flex-col gap-0.5">
+        <span className="section-label">MODUL BISNIS</span>
+        {m.crm && <NavLink to={href.crm()} active={route.page === 'crm'} icon={<Users size={17} />} onNavigate={close}>CRM Klien</NavLink>}
+        {m.finance && canManage && <NavLink to={href.keuangan} active={route.page === 'keuangan'} icon={<Wallet size={17} />} onNavigate={close}>Keuangan</NavLink>}
+        {m.timeTracking && <NavLink to={href.time} active={route.page === 'time'} icon={<Clock size={17} />} onNavigate={close}>Time Tracking</NavLink>}
+        {m.sdm && <NavLink to={href.sdm} active={route.page === 'sdm'} icon={<UserCheck size={17} />} onNavigate={close}>SDM</NavLink>}
+        {m.integrations && <NavLink to={href.integrasi} active={route.page === 'integrasi'} icon={<Zap size={17} />} onNavigate={close}>Integrasi</NavLink>}
+        {!m.timeTracking && !m.crm && !m.finance && !m.sdm && !m.integrations && <span className="px-3 text-[13px] text-arang-muted">Belum ada modul aktif.</span>}
+        <button type="button" onClick={() => { setModal('modules'); close(); }} className="mt-1 flex min-h-[40px] cursor-pointer items-center gap-2 rounded-lg border-0 bg-transparent px-3 text-left text-sm font-semibold text-brand hover:bg-canvas"><Store size={16} />Toko modul {lock('crm') && <span className="text-xs font-bold text-arang-muted">PRO</span>}</button>
+      </div>
+
+      <div className="flex flex-col gap-0.5">
         <span className="section-label">PROYEK</span>
         {spaces.map((s) => {
           const list = projects.filter((p) => p.spaceId === s.id && p.status !== 'completed');
@@ -74,17 +85,6 @@ const Sidebar: React.FC<{ route: Route; close: () => void }> = ({ route, close }
           );
         })}
         <button type="button" onClick={() => { setModal('project'); close(); }} className="mt-1 flex min-h-[40px] cursor-pointer items-center gap-2 rounded-lg border-0 bg-transparent px-3 text-left text-sm text-arang-muted hover:bg-canvas"><Plus size={15} />Proyek baru</button>
-      </div>
-
-      <div className="flex flex-col gap-0.5">
-        <span className="section-label">MODUL BISNIS</span>
-        {m.timeTracking && <NavLink to={href.time} active={route.page === 'time'} icon={<Clock size={17} />} onNavigate={close}>Time Tracking</NavLink>}
-        {m.crm && canManage && <NavLink to={href.crm()} active={route.page === 'crm'} icon={<Users size={17} />} onNavigate={close}>CRM Klien</NavLink>}
-        {m.finance && canManage && <NavLink to={href.keuangan} active={route.page === 'keuangan'} icon={<Wallet size={17} />} onNavigate={close}>Keuangan</NavLink>}
-        {m.sdm && <NavLink to={href.sdm} active={route.page === 'sdm'} icon={<UserCheck size={17} />} onNavigate={close}>SDM</NavLink>}
-        {m.integrations && <NavLink to={href.integrasi} active={route.page === 'integrasi'} icon={<Zap size={17} />} onNavigate={close}>Integrasi</NavLink>}
-        {!m.timeTracking && !m.crm && !m.finance && !m.sdm && !m.integrations && <span className="px-3 text-[13px] text-arang-muted">Belum ada modul aktif.</span>}
-        <button type="button" onClick={() => { setModal('modules'); close(); }} className="mt-1 flex min-h-[40px] cursor-pointer items-center gap-2 rounded-lg border-0 bg-transparent px-3 text-left text-sm font-semibold text-brand hover:bg-canvas"><Store size={16} />Toko modul {lock('crm') && <span className="text-xs font-bold text-arang-muted">PRO</span>}</button>
       </div>
 
       <div className="mt-auto flex flex-col gap-0.5 border-t border-line-soft pt-3">
