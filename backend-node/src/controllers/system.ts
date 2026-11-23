@@ -110,3 +110,25 @@ export async function deleteSystemUser(req: AuthRequest, res: Response): Promise
 
   res.json({ message: 'Pengguna berhasil dihapus dari sistem.' });
 }
+
+export async function updateSystemUserRole(req: AuthRequest, res: Response): Promise<void> {
+  if (!isSuperadmin(req)) {
+    res.status(403).json({ message: 'Akses ditolak.' });
+    return;
+  }
+
+  const targetId = Number(req.params.id);
+  const { role } = req.body;
+  const allowed = ['superadmin', 'owner', 'admin', 'member'];
+  if (!allowed.includes(role)) {
+    res.status(422).json({ message: 'Role tidak valid.' });
+    return;
+  }
+
+  await prisma.users.update({
+    where: { id: BigInt(targetId) },
+    data: { role },
+  });
+
+  res.json({ message: 'Role pengguna berhasil diperbarui.', role });
+}

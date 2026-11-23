@@ -163,6 +163,7 @@ export const api = {
   getSystemWorkspaces: () => call<{ workspaces: SystemWorkspace[] }>('/system/workspaces'),
   getSystemUsers: () => call<{ users: SystemUser[] }>('/system/users'),
   deleteSystemUser: (id: number) => call<{ message: string }>(`/system/users/${id}`, { method: 'DELETE' }),
+  updateSystemUserRole: (id: number, role: string) => call<{ message: string; role: string }>(`/system/users/${id}/role`, { method: 'PATCH', body: { role } }),
 };
 
 export interface SystemStats {

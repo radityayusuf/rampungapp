@@ -77,6 +77,16 @@ export const SystemAdminPage: React.FC = () => {
     }
   };
 
+  const handleRoleChange = async (user: SystemUser, newRole: string) => {
+    try {
+      await api.updateSystemUserRole(user.id, newRole);
+      setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, role: newRole } : u)));
+      notify('Role Diperbarui', `Role akun ${user.email} diubah menjadi ${newRole.toUpperCase()}.`, 'success');
+    } catch (err: any) {
+      notify('Gagal mengubah role', err?.message || 'Terjadi kesalahan sistem.');
+    }
+  };
+
   const filteredWorkspaces = useMemo(() => {
     const q = searchWs.toLowerCase().trim();
     if (!q) return workspaces;
@@ -467,8 +477,11 @@ export const SystemAdminPage: React.FC = () => {
                             </td>
                             <td className="px-6 py-4 text-gray-600">{u.email}</td>
                             <td className="px-6 py-4">
-                              <span
-                                className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                              <select
+                                value={u.role}
+                                disabled={isSelf}
+                                onChange={(e) => handleRoleChange(u, e.target.value)}
+                                className={`cursor-pointer rounded-lg px-2.5 py-1 text-xs font-bold border-0 focus:outline-none focus:ring-2 focus:ring-brand disabled:cursor-not-allowed disabled:opacity-75 ${
                                   u.role === 'superadmin'
                                     ? 'bg-purple-100 text-purple-800'
                                     : u.role === 'owner'
@@ -478,8 +491,11 @@ export const SystemAdminPage: React.FC = () => {
                                     : 'bg-gray-100 text-gray-700'
                                 }`}
                               >
-                                {u.role === 'superadmin' ? 'Superadmin' : u.role.toUpperCase()}
-                              </span>
+                                <option value="superadmin">SUPERADMIN</option>
+                                <option value="owner">OWNER</option>
+                                <option value="admin">ADMIN</option>
+                                <option value="member">MEMBER</option>
+                              </select>
                             </td>
                             <td className="px-6 py-4 font-medium text-gray-700">{u.workspaceName}</td>
                             <td className="px-6 py-4 text-xs text-gray-500">

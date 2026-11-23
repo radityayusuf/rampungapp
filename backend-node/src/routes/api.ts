@@ -90,3 +90,4 @@ apiRouter.get('/system/stats', systemCtrl.getSystemStats);
 apiRouter.get('/system/workspaces', systemCtrl.getSystemWorkspaces);
 apiRouter.get('/system/users', systemCtrl.getSystemUsers);
 apiRouter.delete('/system/users/:id', systemCtrl.deleteSystemUser);
+apiRouter.patch('/system/users/:id/role', systemCtrl.updateSystemUserRole);
