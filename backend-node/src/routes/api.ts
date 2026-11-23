@@ -35,6 +35,7 @@ apiRouter.post('/auth/register', authCtrl.register);
 apiRouter.post('/auth/login', authCtrl.login);
 apiRouter.post('/auth/forgot', authCtrl.forgot);
 apiRouter.post('/auth/reset', authCtrl.reset);
+apiRouter.post('/auth/google', authCtrl.googleAuth);
 
 // ─── Undangan & Portal (Publik) ───
 apiRouter.get('/invites/:token', teamCtrl.showInvite);

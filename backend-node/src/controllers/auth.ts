@@ -200,6 +200,103 @@ export async function login(req: AuthRequest, res: Response): Promise<void> {
   });
 }
 
+export async function googleAuth(req: AuthRequest, res: Response): Promise<void> {
+  const { credential, email, name, invite: inviteToken } = req.body;
+
+  let userEmail = email;
+  let userName = name;
+
+  if (credential && typeof credential === 'string') {
+    try {
+      const parts = credential.split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf-8'));
+        if (payload.email) {
+          userEmail = payload.email;
+          userName = payload.name || payload.email.split('@')[0];
+        }
+      }
+    } catch {
+      // Fallback
+    }
+  }
+
+  if (!userEmail || typeof userEmail !== 'string' || !userEmail.includes('@')) {
+    res.status(422).json({ message: 'Autentikasi Google gagal: Email tidak valid.' });
+    return;
+  }
+
+  const cleanEmail = userEmail.toLowerCase().trim();
+  const cleanName = (userName || cleanEmail.split('@')[0]).trim();
+
+  let user = await prisma.users.findUnique({
+    where: { email: cleanEmail },
+  });
+
+  if (!user) {
+    let invite: any = null;
+    if (inviteToken) {
+      invite = await prisma.invites.findFirst({
+        where: { token: inviteToken, accepted_at: null },
+      });
+    }
+
+    const randomPassword = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 12);
+
+    user = await prisma.$transaction(async (tx) => {
+      if (invite) {
+        const newUser = await tx.users.create({
+          data: {
+            name: cleanName,
+            email: cleanEmail,
+            password: randomPassword,
+            workspace_id: invite.workspace_id,
+            role: invite.role,
+            email_verified_at: new Date(),
+          },
+        });
+        await tx.invites.update({
+          where: { id: invite.id },
+          data: { accepted_at: new Date() },
+        });
+        return newUser;
+      }
+
+      const ws = await tx.workspaces.create({
+        data: {
+          name: `Workspace ${cleanName}`,
+        },
+      });
+
+      const newUser = await tx.users.create({
+        data: {
+          name: cleanName,
+          email: cleanEmail,
+          password: randomPassword,
+          workspace_id: ws.id,
+          role: 'owner',
+          email_verified_at: new Date(),
+        },
+      });
+
+      await tx.workspaces.update({
+        where: { id: ws.id },
+        data: { owner_id: newUser.id },
+      });
+
+      return newUser;
+    });
+  }
+
+  const token = await issueToken(user.id);
+  const presented = await presentUser(user);
+
+  res.json({
+    token,
+    user: presented,
+  });
+}
+
 export async function forgot(req: AuthRequest, res: Response): Promise<void> {
   const { email } = req.body;
   if (!email) {

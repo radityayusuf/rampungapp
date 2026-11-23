@@ -92,6 +92,7 @@ export interface AiSummarizeResult {
 
 export const api = {
   login: (email: string, password: string) => call<{ token: string; user: ApiUser }>('/auth/login', { method: 'POST', body: { email, password } }),
+  loginGoogle: (params: { credential?: string; email?: string; name?: string; invite?: string }) => call<{ token: string; user: ApiUser }>('/auth/google', { method: 'POST', body: params, auth: false }),
   register: (name: string, email: string, password: string, invite?: string) => call<{ token: string; user: ApiUser }>('/auth/register', { method: 'POST', body: { name, email, password, invite } }),
   forgot: (email: string) => call<{ message: string }>('/auth/forgot', { method: 'POST', body: { email }, auth: false }),
   reset: (email: string, token: string, password: string) => call<{ token: string; user: ApiUser }>('/auth/reset', { method: 'POST', body: { email, token, password }, auth: false }),

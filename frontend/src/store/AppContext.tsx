@@ -143,6 +143,7 @@ interface Ctx extends Data {
   syncStatus: SyncStatus;
   login: () => void;
   loginServer: (email: string, password: string) => Promise<void>;
+  loginGoogle: (params: { credential?: string; email?: string; name?: string; invite?: string }) => Promise<void>;
   registerServer: (name: string, email: string, password: string, invite?: string) => Promise<void>;
   resetPassword: (email: string, token: string, password: string) => Promise<void>;
   canManage: boolean;
@@ -758,6 +759,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     mode, booting, syncStatus,
     login: () => patch(() => ({ loggedIn: true })),
     loginServer: (email, password) => enterServer(() => api.login(email, password)),
+    loginGoogle: (params) => enterServer(() => api.loginGoogle(params)),
     resetPassword: (email, token, password) => enterServer(() => api.reset(email, token, password)),
     canManage,
     registerServer: (name, email, password, invite) => enterServer(() => api.register(name, email, password, invite)),
