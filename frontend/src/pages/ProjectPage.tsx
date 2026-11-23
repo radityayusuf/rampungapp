@@ -1,12 +1,12 @@
 import React, { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Search, Sparkles, Zap } from 'lucide-react';
+import { ArrowDown, ArrowUp, Calendar as CalendarIcon, CheckSquare, ChevronLeft, ChevronRight, Equal, MessageSquare, Paperclip, Plus, Search, Sparkles, X, Zap } from 'lucide-react';
 import { useApp } from '../store/AppContext';
 import { useIsMobile } from '../lib/useMedia';
 import { href } from '../store/router';
 import type { ProjectView, Task, TaskStatus } from '../types';
 import { Avatar, Empty, LabelPill, Modal, Pill, PriorityText, Progress, StatusPill } from '../components/ui';
 import { PRIORITY, STATUS, STATUS_ORDER } from '../lib/meta';
-import { BULAN_PANJANG, HARI, addDays, diffDays, fmtDue, fmtDate, isOverdue, parseISODate, pct, todayISO, toISODate } from '../lib/format';
+import { BULAN_PANJANG, HARI, addDays, diffDays, fmtDue, fmtDate, formatTaskKey, isOverdue, parseISODate, pct, todayISO, toISODate } from '../lib/format';
 import { api, AiSummarizeResult } from '../lib/api';
 
 const VIEWS: { key: ProjectView; label: string }[] = [
@@ -22,30 +22,133 @@ const subDone = (t: Task) => t.subtasks.filter((s) => s.completed).length;
 const taskPct = (t: Task) => (t.status === 'done' ? 100 : pct(subDone(t), t.subtasks.length));
 
 /* ---------------- Kanban ---------------- */
-const Card: React.FC<{ t: Task; onDragStart: (id: string) => void }> = ({ t, onDragStart }) => {
+const Card: React.FC<{ t: Task; projectShortName?: string; onDragStart: (id: string) => void }> = ({ t, projectShortName, onDragStart }) => {
+  const { comments } = useApp();
   const late = isOverdue(t.dueDate, t.status === 'done');
+  const commentCount = comments.filter((c) => c.taskId === t.id).length;
+  const key = formatTaskKey(t.id, projectShortName);
+
   return (
     <a
       href={href.tugas(t.id)}
       draggable
       onDragStart={(e) => { e.dataTransfer.setData('text/plain', t.id); onDragStart(t.id); }}
-      className="flex flex-col gap-2.5 rounded-[10px] border border-line bg-white p-3.5 text-arang hover:border-brand-bright"
+      className="group flex flex-col gap-2 rounded-[10px] border border-line bg-white p-3 text-arang hover:border-brand-bright hover:shadow-card transition-all cursor-grab active:cursor-grabbing"
       style={{ color: '#1F2933' }}
     >
-      <div className="flex items-center justify-between"><LabelPill label={t.label} /><PriorityText priority={t.priority} /></div>
-      <span className="text-sm font-semibold leading-snug">{t.title}</span>
-      <Progress value={taskPct(t)} h={4} />
-      <div className="flex items-center justify-between text-xs text-arang-muted">
-        <span className="flex gap-3"><span className="font-semibold" style={{ color: late ? '#B42318' : '#5B6670' }}>{fmtDue(t.dueDate, t.status === 'done')}</span><span>{subDone(t)}/{t.subtasks.length} subtask</span></span>
-        <Avatar userId={t.assigneeId} />
+      <div className="flex items-center justify-between gap-1 text-[11px]">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="font-mono font-bold tracking-tight text-arang-muted group-hover:text-brand">{key}</span>
+          <LabelPill label={t.label} />
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          {t.priority === 'high' && <span className="flex items-center gap-0.5 text-xs font-bold text-red-600" title="Prioritas Tinggi"><ArrowUp size={13} className="stroke-[3]" /></span>}
+          {t.priority === 'medium' && <span className="flex items-center gap-0.5 text-xs font-semibold text-amber-600" title="Prioritas Sedang"><Equal size={13} className="stroke-[3]" /></span>}
+          {t.priority === 'low' && <span className="flex items-center gap-0.5 text-xs font-medium text-slate-500" title="Prioritas Rendah"><ArrowDown size={13} className="stroke-[2.5]" /></span>}
+          {t.isMilestone && <span className="rounded bg-black px-1.5 py-0.5 text-[10px] font-bold text-white">M</span>}
+        </div>
+      </div>
+
+      <span className="text-[13px] font-semibold leading-snug line-clamp-2">{t.title}</span>
+
+      {t.subtasks.length > 0 && <Progress value={taskPct(t)} h={3} />}
+
+      <div className="mt-1 flex items-center justify-between gap-2 border-t border-line-soft pt-2 text-xs text-arang-muted">
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-semibold ${
+              t.status === 'done'
+                ? 'bg-emerald-50 text-emerald-700'
+                : late
+                ? 'bg-red-50 text-red-700 font-bold'
+                : 'bg-canvas text-arang-muted'
+            }`}
+          >
+            <CalendarIcon size={11} />
+            {fmtDue(t.dueDate, t.status === 'done')}
+          </span>
+
+          {t.subtasks.length > 0 && (
+            <span
+              className={`inline-flex items-center gap-1 text-[11px] ${
+                subDone(t) === t.subtasks.length ? 'text-emerald-700 font-bold' : 'text-arang-muted'
+              }`}
+              title="Subtask selesai"
+            >
+              <CheckSquare size={12} />
+              {subDone(t)}/{t.subtasks.length}
+            </span>
+          )}
+
+          {t.attachments.length > 0 && (
+            <span className="inline-flex items-center gap-0.5 text-[11px] text-arang-muted" title="Lampiran berkas">
+              <Paperclip size={12} />
+              {t.attachments.length}
+            </span>
+          )}
+
+          {commentCount > 0 && (
+            <span className="inline-flex items-center gap-0.5 text-[11px] text-arang-muted" title="Komentar">
+              <MessageSquare size={12} />
+              {commentCount}
+            </span>
+          )}
+        </div>
+
+        <Avatar userId={t.assigneeId} size={22} />
       </div>
     </a>
   );
 };
 
-const MobileBoard: React.FC<{ tasks: Task[]; projectId: string }> = ({ tasks, projectId }) => {
+const InlineCreateCard: React.FC<{ projectId: string; status: TaskStatus; onDone: () => void }> = ({ projectId, status, onDone }) => {
+  const { createTask } = useApp();
+  const [title, setTitle] = useState('');
+
+  const submit = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!title.trim()) return;
+    createTask({ projectId, title: title.trim(), status });
+    setTitle('');
+    onDone();
+  };
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-2 rounded-[10px] border border-brand bg-white p-2.5 shadow-sm">
+      <textarea
+        autoFocus
+        placeholder="Ketik judul kartu / tugas baru..."
+        className="input min-h-[60px] p-2 text-xs resize-none"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            submit();
+          } else if (e.key === 'Escape') {
+            onDone();
+          }
+        }}
+      />
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <button type="submit" disabled={!title.trim()} className="btn btn-primary btn-sm py-1 px-3 text-xs">
+            Tambah
+          </button>
+          <button type="button" onClick={onDone} className="btn btn-outline btn-sm py-1 px-2 text-xs">
+            <X size={14} />
+          </button>
+        </div>
+        <span className="text-[10px] text-arang-muted">Enter untuk simpan</span>
+      </div>
+    </form>
+  );
+};
+
+const MobileBoard: React.FC<{ tasks: Task[]; projectId: string; projectShortName?: string }> = ({ tasks, projectId, projectShortName }) => {
   const { moveTask, openCreateTask } = useApp();
   const [col, setCol] = useState<TaskStatus>('in_progress');
+  const [adding, setAdding] = useState(false);
   const list = tasks.filter((t) => t.status === col);
   return (
     <div className="flex flex-col gap-3 px-4 pb-6 pt-4">
@@ -53,41 +156,33 @@ const MobileBoard: React.FC<{ tasks: Task[]; projectId: string }> = ({ tasks, pr
         {STATUS_ORDER.map((s) => {
           const on = s === col;
           return (
-            <button key={s} type="button" role="tab" aria-selected={on} onClick={() => setCol(s)} className="h-10 shrink-0 cursor-pointer rounded-full px-3.5 text-sm font-semibold" style={{ border: `1px solid ${on ? '#1F2933' : '#E2E5E1'}`, background: on ? '#1F2933' : '#fff', color: on ? '#fff' : '#1F2933' }}>
+            <button key={s} type="button" role="tab" aria-selected={on} onClick={() => { setCol(s); setAdding(false); }} className="h-10 shrink-0 cursor-pointer rounded-full px-3.5 text-sm font-semibold" style={{ border: `1px solid ${on ? '#1F2933' : '#E2E5E1'}`, background: on ? '#1F2933' : '#fff', color: on ? '#fff' : '#1F2933' }}>
               {STATUS[s].label} · {tasks.filter((t) => t.status === s).length}
             </button>
           );
         })}
       </div>
-      {list.map((t) => {
-        const late = isOverdue(t.dueDate, t.status === 'done');
-        return (
-          <div key={t.id} className="flex flex-col gap-2.5 rounded-card border border-line bg-white p-3.5">
-            <div className="flex items-center justify-between"><LabelPill label={t.label} /><span className="text-xs font-bold" style={{ color: late ? '#B42318' : '#5B6670' }}>{fmtDue(t.dueDate, t.status === 'done')}</span></div>
-            <a href={href.tugas(t.id)} className="text-[15px] font-semibold leading-snug" style={{ color: '#1F2933' }}>{t.title}</a>
-            <div className="flex items-center justify-between gap-3 text-xs text-arang-muted">
-              <span>{subDone(t)}/{t.subtasks.length} subtask</span>
-              <span className="flex items-center gap-2">
-                <label className="sr-only" htmlFor={`mv-${t.id}`}>Pindah kolom</label>
-                <select id={`mv-${t.id}`} className="input input-sm h-9 w-auto text-xs" value={t.status} onChange={(e) => moveTask(t.id, e.target.value as TaskStatus)}>{STATUS_ORDER.map((s) => <option key={s} value={s}>{STATUS[s].label}</option>)}</select>
-                <Avatar userId={t.assigneeId} size={28} />
-              </span>
-            </div>
-          </div>
-        );
-      })}
+      {list.map((t) => (
+        <Card key={t.id} t={t} projectShortName={projectShortName} onDragStart={() => undefined} />
+      ))}
       {!list.length && <Empty title="Kolom kosong" text="Belum ada tugas di kolom ini." />}
-      <button type="button" onClick={() => openCreateTask({ projectId, status: col })} className="h-12 cursor-pointer rounded-card border border-dashed border-line-strong bg-transparent text-sm text-arang-muted">+ Tambah tugas ke kolom ini</button>
+      {adding ? (
+        <InlineCreateCard projectId={projectId} status={col} onDone={() => setAdding(false)} />
+      ) : (
+        <button type="button" onClick={() => setAdding(true)} className="h-12 cursor-pointer rounded-card border border-dashed border-line-strong bg-transparent text-sm text-arang-muted">+ Tambah kartu ke kolom ini</button>
+      )}
     </div>
   );
 };
 
-const Kanban: React.FC<{ tasks: Task[]; projectId: string }> = ({ tasks, projectId }) => {
+const Kanban: React.FC<{ tasks: Task[]; projectId: string; projectShortName?: string }> = ({ tasks, projectId, projectShortName }) => {
   const { moveTask, openCreateTask } = useApp();
   const mobile = useIsMobile();
   const [over, setOver] = useState<TaskStatus | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
-  if (mobile) return <MobileBoard tasks={tasks} projectId={projectId} />;
+  const [addingCol, setAddingCol] = useState<TaskStatus | null>(null);
+
+  if (mobile) return <MobileBoard tasks={tasks} projectId={projectId} projectShortName={projectShortName} />;
   return (
     <div className="flex items-start gap-4 overflow-x-auto px-4 pb-8 pt-6 sm:px-8">
       {STATUS_ORDER.map((st) => {
@@ -99,15 +194,23 @@ const Kanban: React.FC<{ tasks: Task[]; projectId: string }> = ({ tasks, project
             onDragOver={(e) => { e.preventDefault(); setOver(st); }}
             onDragLeave={() => setOver(null)}
             onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData('text/plain') || dragId; if (id) moveTask(id, st); setOver(null); setDragId(null); }}
-            className="flex w-[285px] shrink-0 flex-col gap-2.5 rounded-card bg-line-soft p-3"
+            className="flex w-[295px] shrink-0 flex-col gap-2.5 rounded-card bg-line-soft p-3"
             style={over === st ? { outline: '2px dashed #0F9D8A' } : undefined}
           >
             <div className="flex items-center justify-between px-1 pt-1">
-              <div className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full" style={{ background: STATUS[st].dot }} /><h2 className="m-0 text-sm font-bold">{STATUS[st].label}</h2><span className="text-[13px] text-arang-muted">{list.length}</span></div>
-              <button type="button" aria-label={`Tambah tugas di ${STATUS[st].label}`} onClick={() => openCreateTask({ projectId, status: st })} className="btn-icon h-8 w-8 border-0 bg-transparent"><Plus size={16} /></button>
+              <div className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ background: STATUS[st].dot }} />
+                <h2 className="m-0 text-sm font-bold">{STATUS[st].label}</h2>
+                <span className="rounded-full bg-white px-2 py-0.5 text-xs font-bold text-arang-muted shadow-sm">{list.length}</span>
+              </div>
+              <button type="button" aria-label={`Tambah tugas di ${STATUS[st].label}`} onClick={() => setAddingCol(st)} className="btn-icon h-8 w-8 border-0 bg-transparent hover:bg-white"><Plus size={16} /></button>
             </div>
-            {list.map((t) => <Card key={t.id} t={t} onDragStart={setDragId} />)}
-            <button type="button" onClick={() => openCreateTask({ projectId, status: st })} className="h-10 cursor-pointer rounded-[10px] border border-dashed border-line-strong bg-transparent text-[13px] text-arang-muted">+ Tambah tugas</button>
+            {list.map((t) => <Card key={t.id} t={t} projectShortName={projectShortName} onDragStart={setDragId} />)}
+            {addingCol === st ? (
+              <InlineCreateCard projectId={projectId} status={st} onDone={() => setAddingCol(null)} />
+            ) : (
+              <button type="button" onClick={() => setAddingCol(st)} className="flex items-center justify-center gap-1.5 h-9 cursor-pointer rounded-[10px] border border-dashed border-line-strong bg-transparent text-[13px] text-arang-muted hover:bg-white hover:text-brand transition-colors">+ Tambah kartu</button>
+            )}
           </section>
         );
       })}
@@ -116,7 +219,7 @@ const Kanban: React.FC<{ tasks: Task[]; projectId: string }> = ({ tasks, project
 };
 
 /* ---------------- List ---------------- */
-const ListView: React.FC<{ tasks: Task[] }> = ({ tasks }) => {
+const ListView: React.FC<{ tasks: Task[]; projectShortName?: string }> = ({ tasks, projectShortName }) => {
   const [group, setGroup] = useState<'status' | 'orang'>('status');
   const { users, user } = useApp();
   const groups = group === 'status'
@@ -129,10 +232,11 @@ const ListView: React.FC<{ tasks: Task[] }> = ({ tasks }) => {
         <section key={g.key} className="card overflow-x-auto">
           <div className="flex items-center gap-2 border-b border-line-soft px-[18px] py-3.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: g.dot }} /><h2 className="m-0 text-sm font-bold">{g.name}</h2><span className="text-[13px] text-arang-muted">{g.rows.length} tugas</span></div>
           <table className="w-full min-w-[760px] border-collapse text-sm">
-            <thead><tr className="text-left text-xs text-arang-muted"><th className="px-[18px] py-2.5 font-semibold">Tugas</th><th className="px-3 py-2.5 font-semibold">Penanggung jawab</th><th className="px-3 py-2.5 font-semibold">Tenggat</th><th className="px-3 py-2.5 font-semibold">Prioritas</th><th className="px-3 py-2.5 font-semibold">Label</th><th className="py-2.5 pl-3 pr-[18px] font-semibold">Subtask</th></tr></thead>
+            <thead><tr className="text-left text-xs text-arang-muted"><th className="px-3 py-2.5 font-semibold">Kode</th><th className="px-[18px] py-2.5 font-semibold">Tugas</th><th className="px-3 py-2.5 font-semibold">Penanggung jawab</th><th className="px-3 py-2.5 font-semibold">Tenggat</th><th className="px-3 py-2.5 font-semibold">Prioritas</th><th className="px-3 py-2.5 font-semibold">Label</th><th className="py-2.5 pl-3 pr-[18px] font-semibold">Subtask</th></tr></thead>
             <tbody>
               {g.rows.map((t) => (
-                <tr key={t.id} className="border-t border-line-soft">
+                <tr key={t.id} className="border-t border-line-soft hover:bg-canvas">
+                  <td className="px-3 py-3 font-mono text-xs font-bold text-arang-muted">{formatTaskKey(t.id, projectShortName)}</td>
                   <td className="px-[18px] py-3 font-semibold"><a href={href.tugas(t.id)} style={{ color: '#1F2933' }}>{t.title}</a></td>
                   <td className="px-3 py-3"><span className="inline-flex items-center gap-2"><Avatar userId={t.assigneeId} size={24} />{user(t.assigneeId).name}</span></td>
                   <td className="px-3 py-3 font-semibold" style={{ color: isOverdue(t.dueDate, t.status === 'done') ? '#B42318' : '#1F2933' }}>{fmtDue(t.dueDate, t.status === 'done')}</td>
@@ -231,17 +335,18 @@ const Timeline: React.FC<{ tasks: Task[] }> = ({ tasks }) => {
 };
 
 /* ---------------- Tabel ---------------- */
-const TableView: React.FC<{ tasks: Task[] }> = ({ tasks }) => {
+const TableView: React.FC<{ tasks: Task[]; projectShortName?: string }> = ({ tasks, projectShortName }) => {
   const { updateTask, moveTask, users } = useApp();
   return (
     <div className="px-4 pb-8 pt-6 sm:px-8">
       <div className="card overflow-x-auto">
         <table className="w-full min-w-[900px] border-collapse text-sm">
-          <thead><tr className="text-left text-xs text-arang-muted">{['Tugas', 'Status', 'Penanggung jawab', 'Prioritas', 'Mulai', 'Tenggat', 'Estimasi'].map((h) => <th key={h} className="px-3 py-2.5 font-semibold first:pl-5">{h}</th>)}</tr></thead>
+          <thead><tr className="text-left text-xs text-arang-muted">{['Kode', 'Tugas', 'Status', 'Penanggung jawab', 'Prioritas', 'Mulai', 'Tenggat', 'Estimasi'].map((h, i) => <th key={h} className={`px-3 py-2.5 font-semibold ${i === 0 ? 'pl-5' : ''}`}>{h}</th>)}</tr></thead>
           <tbody>
             {tasks.map((t) => (
-              <tr key={t.id} className="border-t border-line-soft">
-                <td className="py-2 pl-5 pr-3 font-semibold"><a href={href.tugas(t.id)} style={{ color: '#1F2933' }}>{t.title}</a></td>
+              <tr key={t.id} className="border-t border-line-soft hover:bg-canvas">
+                <td className="py-2 pl-5 pr-3 font-mono text-xs font-bold text-arang-muted">{formatTaskKey(t.id, projectShortName)}</td>
+                <td className="py-2 px-3 font-semibold"><a href={href.tugas(t.id)} style={{ color: '#1F2933' }}>{t.title}</a></td>
                 <td className="px-3 py-2"><label className="sr-only" htmlFor={`s-${t.id}`}>Status</label><select id={`s-${t.id}`} className="input input-sm" value={t.status} onChange={(e) => moveTask(t.id, e.target.value as TaskStatus)}>{STATUS_ORDER.map((s) => <option key={s} value={s}>{STATUS[s].label}</option>)}</select></td>
                 <td className="px-3 py-2"><label className="sr-only" htmlFor={`a-${t.id}`}>Penanggung jawab</label><select id={`a-${t.id}`} className="input input-sm" value={t.assigneeId} onChange={(e) => updateTask(t.id, { assigneeId: e.target.value })}>{users.map((u) => <option key={u.id} value={u.id}>{u.shortName}</option>)}</select></td>
                 <td className="px-3 py-2"><label className="sr-only" htmlFor={`p-${t.id}`}>Prioritas</label><select id={`p-${t.id}`} className="input input-sm" value={t.priority} onChange={(e) => updateTask(t.id, { priority: e.target.value as Task['priority'] })}>{(Object.keys(PRIORITY) as Task['priority'][]).map((p) => <option key={p} value={p}>{PRIORITY[p].label}</option>)}</select></td>
@@ -285,16 +390,29 @@ const Docs: React.FC<{ projectId: string }> = ({ projectId }) => {
 
 /* ---------------- Halaman ---------------- */
 export const ProjectPage: React.FC<{ projectId: string; view: ProjectView }> = ({ projectId, view }) => {
-  const { projects, tasks, users, openCreateTask, setModal, workspace, automations, clients, notify } = useApp();
+  const { projects, tasks, users, me, openCreateTask, setModal, workspace, automations, clients, notify } = useApp();
   const [q, setQ] = useState('');
   const [who, setWho] = useState('all');
   const [prio, setPrio] = useState('all');
+  const [onlyMine, setOnlyMine] = useState(false);
+  const [onlyHigh, setOnlyHigh] = useState(false);
+  const [onlyDueSoon, setOnlyDueSoon] = useState(false);
+  const [onlyAttach, setOnlyAttach] = useState(false);
   const [aiSummary, setAiSummary] = useState<AiSummarizeResult | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiModal, setAiModal] = useState(false);
   const p = projects.find((x) => x.id === projectId);
   const all = useMemo(() => tasks.filter((t) => t.projectId === projectId), [tasks, projectId]);
-  const list = useMemo(() => all.filter((t) => (!q || t.title.toLowerCase().includes(q.toLowerCase())) && (who === 'all' || t.assigneeId === who) && (prio === 'all' || t.priority === prio)), [all, q, who, prio]);
+  const list = useMemo(() => all.filter((t) => {
+    if (q && !t.title.toLowerCase().includes(q.toLowerCase())) return false;
+    if (who !== 'all' && t.assigneeId !== who) return false;
+    if (prio !== 'all' && t.priority !== prio) return false;
+    if (onlyMine && t.assigneeId !== me.id) return false;
+    if (onlyHigh && t.priority !== 'high') return false;
+    if (onlyDueSoon && (t.status === 'done' || diffDays(todayISO(), t.dueDate) > 3)) return false;
+    if (onlyAttach && t.attachments.length === 0) return false;
+    return true;
+  }), [all, q, who, prio, onlyMine, onlyHigh, onlyDueSoon, onlyAttach, me.id]);
 
   if (!p) return <Empty title="Proyek tidak ditemukan" text="Proyek ini mungkin sudah dihapus."><a className="btn btn-primary" href={href.dashboard}>Ke dashboard</a></Empty>;
   const done = all.filter((t) => t.status === 'done').length;
@@ -332,26 +450,88 @@ export const ProjectPage: React.FC<{ projectId: string; view: ProjectView }> = (
         </div>
       </header>
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 pb-3 sm:px-8">
-        <nav aria-label="Tampilan proyek" className="-mx-4 flex max-w-[100vw] gap-1 overflow-x-auto px-4 text-sm sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
-          {VIEWS.map((v) => <a key={v.key} href={href.proyek(p.id, v.key)} aria-current={view === v.key ? 'page' : undefined} className="flex h-10 shrink-0 items-center rounded-lg px-3.5" style={view === v.key ? { background: '#1F2933', color: '#fff', fontWeight: 600 } : { color: '#1F2933' }}>{v.label}</a>)}
-        </nav>
+      <div className="mt-4 flex flex-col gap-2.5 border-b border-line px-4 pb-3 sm:px-8">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <nav aria-label="Tampilan proyek" className="-mx-4 flex max-w-[100vw] gap-1 overflow-x-auto px-4 text-sm sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
+            {VIEWS.map((v) => <a key={v.key} href={href.proyek(p.id, v.key)} aria-current={view === v.key ? 'page' : undefined} className="flex h-10 shrink-0 items-center rounded-lg px-3.5" style={view === v.key ? { background: '#1F2933', color: '#fff', fontWeight: 600 } : { color: '#1F2933' }}>{v.label}</a>)}
+          </nav>
+          {view !== 'docs' && (
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+              <div className="relative w-full sm:w-auto"><Search size={15} className="pointer-events-none absolute left-3 top-3 text-arang-muted" /><label htmlFor="cari" className="sr-only">Cari tugas</label><input id="cari" type="search" placeholder="Cari tugas atau kata kunci..." value={q} onChange={(e) => setQ(e.target.value)} className="input input-sm w-full pl-9 sm:w-[220px]" /></div>
+              <label htmlFor="f-who" className="sr-only">Penanggung jawab</label>
+              <select id="f-who" className="input input-sm w-auto flex-1 sm:flex-none" value={who} onChange={(e) => setWho(e.target.value)}><option value="all">Semua orang</option>{users.map((u) => <option key={u.id} value={u.id}>{u.shortName}</option>)}</select>
+              <label htmlFor="f-prio" className="sr-only">Prioritas</label>
+              <select id="f-prio" className="input input-sm w-auto flex-1 sm:flex-none" value={prio} onChange={(e) => setPrio(e.target.value)}><option value="all">Semua prioritas</option>{(Object.keys(PRIORITY) as Task['priority'][]).map((x) => <option key={x} value={x}>{PRIORITY[x].label}</option>)}</select>
+            </div>
+          )}
+        </div>
+
+        {/* Jira-style Quick Filters Bar */}
         {view !== 'docs' && (
-          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-            <div className="relative w-full sm:w-auto"><Search size={15} className="pointer-events-none absolute left-3 top-3 text-arang-muted" /><label htmlFor="cari" className="sr-only">Cari tugas</label><input id="cari" type="search" placeholder="Cari tugas..." value={q} onChange={(e) => setQ(e.target.value)} className="input input-sm w-full pl-9 sm:w-[200px]" /></div>
-            <label htmlFor="f-who" className="sr-only">Penanggung jawab</label>
-            <select id="f-who" className="input input-sm w-auto flex-1 sm:flex-none" value={who} onChange={(e) => setWho(e.target.value)}><option value="all">Semua orang</option>{users.map((u) => <option key={u.id} value={u.id}>{u.shortName}</option>)}</select>
-            <label htmlFor="f-prio" className="sr-only">Prioritas</label>
-            <select id="f-prio" className="input input-sm w-auto flex-1 sm:flex-none" value={prio} onChange={(e) => setPrio(e.target.value)}><option value="all">Semua prioritas</option>{(Object.keys(PRIORITY) as Task['priority'][]).map((x) => <option key={x} value={x}>{PRIORITY[x].label}</option>)}</select>
+          <div className="flex flex-wrap items-center gap-1.5 text-xs pt-0.5">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-arang-muted mr-1">Filter Cepat:</span>
+            <button
+              type="button"
+              onClick={() => setOnlyMine(!onlyMine)}
+              className={`rounded-full px-2.5 py-1 font-semibold transition-all border ${
+                onlyMine ? 'bg-brand text-white border-brand' : 'bg-white text-arang-body border-line hover:border-brand-bright'
+              }`}
+            >
+              Hanya tugas saya
+            </button>
+            <button
+              type="button"
+              onClick={() => setOnlyHigh(!onlyHigh)}
+              className={`rounded-full px-2.5 py-1 font-semibold transition-all border ${
+                onlyHigh ? 'bg-red-600 text-white border-red-600' : 'bg-white text-arang-body border-line hover:border-red-300'
+              }`}
+            >
+              Prioritas tinggi
+            </button>
+            <button
+              type="button"
+              onClick={() => setOnlyDueSoon(!onlyDueSoon)}
+              className={`rounded-full px-2.5 py-1 font-semibold transition-all border ${
+                onlyDueSoon ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-arang-body border-line hover:border-amber-300'
+              }`}
+            >
+              Tenggat dekat (≤ 3 hari)
+            </button>
+            <button
+              type="button"
+              onClick={() => setOnlyAttach(!onlyAttach)}
+              className={`rounded-full px-2.5 py-1 font-semibold transition-all border ${
+                onlyAttach ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-arang-body border-line hover:border-indigo-300'
+              }`}
+            >
+              Ada lampiran
+            </button>
+            {(onlyMine || onlyHigh || onlyDueSoon || onlyAttach || q || who !== 'all' || prio !== 'all') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setOnlyMine(false);
+                  setOnlyHigh(false);
+                  setOnlyDueSoon(false);
+                  setOnlyAttach(false);
+                  setQ('');
+                  setWho('all');
+                  setPrio('all');
+                }}
+                className="text-[11px] text-arang-muted hover:text-red-600 font-semibold underline px-1.5 ml-1"
+              >
+                Reset filter
+              </button>
+            )}
           </div>
         )}
       </div>
 
-      {view === 'kanban' && <Kanban tasks={list} projectId={p.id} />}
-      {view === 'list' && <ListView tasks={list} />}
+      {view === 'kanban' && <Kanban tasks={list} projectId={p.id} projectShortName={p.shortName} />}
+      {view === 'list' && <ListView tasks={list} projectShortName={p.shortName} />}
       {view === 'kalender' && <Calendar tasks={list} />}
       {view === 'timeline' && <Timeline tasks={list} />}
-      {view === 'tabel' && <TableView tasks={list} />}
+      {view === 'tabel' && <TableView tasks={list} projectShortName={p.shortName} />}
       {view === 'docs' && <Docs key={p.id} projectId={p.id} />}
 
       <Modal open={aiModal} onClose={() => setAiModal(false)} title={`Analisis & Ringkasan AI: ${p.name}`} footer={<button type="button" className="btn btn-primary" onClick={() => setAiModal(false)}>Tutup</button>}>

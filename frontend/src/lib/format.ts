@@ -55,6 +55,25 @@ export const fmtFullDay = (iso: string) => {
 
 export const isOverdue = (dueISO: string, done = false) => !done && diffDays(todayISO(), dueISO) < 0;
 
+/** Menghasilkan Jira/Trello issue key seperti SINAR-101 atau KASIR-042 */
+export const formatTaskKey = (taskId: string, projectShortName?: string) => {
+  const prefix = (projectShortName || 'RAMP')
+    .replace(/[^A-Za-z0-9]/g, '')
+    .slice(0, 5)
+    .toUpperCase() || 'TASK';
+  const digits = taskId.replace(/\D/g, '');
+  if (digits.length >= 1) {
+    return `${prefix}-${digits.padStart(2, '0')}`;
+  }
+  let hash = 0;
+  for (let i = 0; i < taskId.length; i++) {
+    hash = ((hash << 5) - hash) + taskId.charCodeAt(i);
+    hash |= 0;
+  }
+  const num = Math.abs(hash % 900) + 10;
+  return `${prefix}-${num}`;
+};
+
 /** Label tenggat: "Terlambat · 6 Nov", "Hari ini", "Besok", "9 Nov". */
 export const fmtDue = (dueISO: string, done = false) => {
   const diff = diffDays(todayISO(), dueISO);

@@ -156,8 +156,10 @@ interface Ctx extends Data {
   moveTask: (id: string, status: TaskStatus) => void;
   toggleSubtask: (taskId: string, subId: string) => void;
   addSubtask: (taskId: string, title: string) => void;
+  deleteSubtask: (taskId: string, subId: string) => void;
   addComment: (taskId: string, content: string) => void;
   addAttachment: (taskId: string, name: string, size: number, url?: string) => void;
+  deleteAttachment: (taskId: string, attachmentId: string) => void;
   uploadAttachment: (taskId: string, file: File) => Promise<void>;
 
   // proyek
@@ -486,6 +488,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       tasks: d.tasks.map((t) => (t.id === taskId ? { ...t, subtasks: [...t.subtasks, { id: uid('st'), title, completed: false, assigneeId: t.assigneeId }] } : t)),
     }));
 
+  const deleteSubtask: Ctx['deleteSubtask'] = (taskId, subId) =>
+    patch((d) => ({
+      tasks: d.tasks.map((t) => (t.id === taskId ? { ...t, subtasks: t.subtasks.filter((s) => s.id !== subId) } : t)),
+    }));
+
   const addComment: Ctx['addComment'] = (taskId, content) => {
     const t = data.tasks.find((x) => x.id === taskId);
     const nowIso = new Date().toISOString();
@@ -507,6 +514,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         t.id === taskId
           ? { ...t, attachments: [...t.attachments, { id: uid('att'), name, size: size > 1e6 ? `${(size / 1e6).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(size / 1e3))} KB`, url, uploadedAt: new Date().toISOString() }] }
           : t,
+      ),
+    }));
+
+  const deleteAttachment: Ctx['deleteAttachment'] = (taskId, attachmentId) =>
+    patch((d) => ({
+      tasks: d.tasks.map((t) =>
+        t.id === taskId ? { ...t, attachments: t.attachments.filter((a) => a.id !== attachmentId) } : t
       ),
     }));
 
@@ -771,7 +785,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setData(account ? adoptSeed({ ...base, workspace: { ...seed.seedWorkspace, name: data.workspace.name } }, account) : base);
       notify('Data demo dikembalikan', undefined, 'success');
     },
-    createTask, updateTask, deleteTask, moveTask, toggleSubtask, addSubtask, addComment, addAttachment, uploadAttachment,
+    createTask, updateTask, deleteTask, moveTask, toggleSubtask, addSubtask, deleteSubtask, addComment, addAttachment, deleteAttachment, uploadAttachment,
     createProject, updateProject, createSpace,
     timer, timerSeconds, startTimer, stopTimer, addTimeEntry,
     toggleModule, upgradePlan, updateWorkspace, canUseModule,
