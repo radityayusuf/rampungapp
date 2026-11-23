@@ -67,12 +67,12 @@ const snapshot = (d: Data) => {
   return m;
 };
 
-const fromCollections = (c: Record<string, unknown[]>): Data => {
-  const base = initial();
+const fromCollections = (c: Record<string, unknown[]>, acc?: ApiUser | null): Data => {
+  const base = acc ? emptyData(acc) : initial();
   const out = { ...base, loggedIn: true } as Record<string, unknown>;
   for (const k of COLLECTIONS) {
     if (k === 'workspace') { if (c.workspace?.[0]) out.workspace = c.workspace[0]; }
-    else out[k] = c[k] ?? [];
+    else if (c[k]) out[k] = c[k];
   }
   return out as unknown as Data;
 };
@@ -94,7 +94,48 @@ const memberFromAccount = (acc: ApiUser, idx: number): User => {
   };
 };
 
-/** Data contoh milik akun nyata: pengguna contoh "Rina" diganti dengan akun yang login, sisanya jadi anggota demo. */
+/** Workspace baru bersih: tidak ada data dummy/contoh */
+const emptyData = (acc: ApiUser): Data => {
+  const me = memberFromAccount(acc, 0);
+  return {
+    workspace: {
+      id: 'ws-main',
+      name: acc.workspace_name,
+      plan: 'bisnis',
+      hourlyRate: 150000,
+      whatsappConnected: false,
+      whatsappNumber: '',
+      storageUsedMB: 0,
+      storageMaxMB: 10240,
+      enabledModules: {
+        crm: true,
+        finance: true,
+        timeTracking: true,
+        sdm: true,
+        integrations: true,
+        aiAssistant: true,
+      },
+    },
+    members: [me],
+    spaces: [{ id: 'sp-1', name: 'Umum', description: 'Ruang kerja utama' }],
+    projects: [],
+    tasks: [],
+    comments: [],
+    activities: [],
+    notifications: [],
+    timeEntries: [],
+    clients: [],
+    deals: [],
+    invoices: [],
+    expenses: [],
+    attendances: [],
+    leaves: [],
+    automations: [],
+    loggedIn: true,
+  };
+};
+
+/** Data contoh milik akun nyata (hanya dipakai jika user meminta reset ke demo) */
 const adoptSeed = (d: Data, acc: ApiUser): Data => {
   const myId = `u${acc.id}`;
   const out = JSON.parse(JSON.stringify(d).split(seed.CURRENT_USER_ID).join(myId)) as Data;
@@ -291,15 +332,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     revRef.current = res.rev;
     setAccount(acc);
     if (res.empty) {
-      // Workspace baru: isi dengan data contoh, lalu efek sinkronisasi mengunggahnya.
+      // Workspace baru bersih (tanpa data dummy/contoh)
       synced.current = new Map();
-      const base = { ...initial(), loggedIn: true, workspace: { ...seed.seedWorkspace, name: acc.workspace_name } };
-      setData(adoptSeed(base, acc));
+      setData(emptyData(acc));
     } else {
-      let d = fromCollections(res.collections);
+      let d = fromCollections(res.collections, acc);
       synced.current = snapshot(d);
-      if (!res.collections.members?.length) d = adoptSeed(d, acc); // akun lama: belum ada daftar anggota
-      else if (!d.members.some((m) => m.id === `u${acc.id}`)) d = { ...d, members: [...d.members, memberFromAccount(acc, d.members.length)] }; // baru bergabung lewat undangan
+      if (!d.members.some((m) => m.id === `u${acc.id}`)) {
+        d = { ...d, members: [memberFromAccount(acc, d.members.length), ...d.members] };
+      }
       setData(d);
     }
     setSyncStatus('saved');
