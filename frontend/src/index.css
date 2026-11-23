@@ -1,0 +1,157 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-canvas text-arang font-sans antialiased;
+    margin: 0;
+  }
+  a {
+    @apply text-brand no-underline;
+  }
+  a:hover {
+    @apply text-brand-hover;
+  }
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+  :focus-visible {
+    outline: 2px solid #0b7a6b;
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex h-11 shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-[10px] px-4 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-sm {
+    @apply h-10 rounded-lg px-3.5 font-normal;
+  }
+  .btn-primary {
+    @apply border-0 bg-brand font-bold text-white hover:bg-brand-hover;
+  }
+  .btn-primary:hover {
+    color: #fff;
+  }
+  .btn-outline {
+    @apply border border-line bg-white text-arang hover:bg-canvas-subtle;
+  }
+  .btn-outline:hover {
+    color: #1f2933;
+  }
+  .btn-kunyit {
+    @apply border-0 bg-kunyit font-bold text-kunyit-ink hover:brightness-95;
+  }
+  .btn-ghost {
+    @apply border-0 bg-transparent text-arang-muted hover:bg-canvas;
+  }
+  .btn-icon {
+    @apply inline-flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-line bg-white text-arang hover:bg-canvas-subtle;
+  }
+
+  .card {
+    @apply rounded-card border border-line bg-white;
+  }
+  .card-title {
+    @apply m-0 text-base font-bold;
+  }
+
+  .field-label {
+    @apply text-sm font-semibold text-arang;
+  }
+  .input {
+    @apply h-12 w-full rounded-[10px] border border-line-strong bg-white px-3.5 text-[15px] text-arang outline-none placeholder:text-arang-faint focus:border-brand;
+  }
+  .input-sm {
+    @apply h-10 rounded-lg border-line px-3 text-sm;
+  }
+  textarea.input {
+    @apply h-auto py-3 leading-relaxed;
+  }
+
+  .pill {
+    @apply inline-flex items-center whitespace-nowrap rounded-full px-2 py-[3px] text-xs font-semibold;
+  }
+  .section-label {
+    @apply px-3 pb-1.5 text-xs font-bold tracking-[0.6px] text-arang-muted;
+  }
+  .eyebrow {
+    @apply text-[13px] text-arang-muted;
+  }
+  .page-title {
+    @apply m-0 text-[26px] font-extrabold tracking-[-0.4px];
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Scrollbar tipis */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #c9cec8;
+  border-radius: 999px;
+}
+
+/* Garis kolom harian di Timeline */
+.timeline-grid {
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0,
+    transparent calc(100% / var(--days) - 1px),
+    #f1f2f0 calc(100% / var(--days) - 1px),
+    #f1f2f0 calc(100% / var(--days))
+  );
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.toast-in {
+  animation: toast-in 0.18s ease-out;
+}
+
+/* Label tersembunyi harus berpangkal di pojok, kalau tidak ia "bocor" keluar
+   dari wadah geser (tabel/kolom) dan melebarkan halaman di ponsel. */
+.sr-only {
+  left: 0;
+  top: 0;
+}
+
+/* Cetak / Unduh PDF: hanya area bertanda .print-area yang dicetak (mis. pratinjau invoice). */
+@media print {
+  body * { visibility: hidden !important; }
+  .print-area, .print-area * { visibility: visible !important; }
+  .print-area { position: absolute !important; left: 0; top: 0; width: 100% !important; border: 0 !important; box-shadow: none !important; }
+  .no-print { display: none !important; }
+  @page { margin: 16mm; }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "rampung-project",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Rampung — Dari Ide Sampai Rampung. Project Management & Business Suite Indonesia.",
+  "scripts": {
+    "dev:frontend": "npm run dev --prefix frontend",
+    "build:frontend": "npm run build --prefix frontend",
+    "dev:backend": "npm run dev --prefix backend-node",
+    "dev:backend:php": "cd backend && php artisan serve --port=8000",
+    "backend:node:dev": "npm run dev --prefix backend-node",
+    "backend:node:build": "npm run build --prefix backend-node",
+    "backend:node:start": "npm start --prefix backend-node",
+    "backend:node:db": "npx prisma db push --schema=backend-node/prisma/schema.prisma",
+    "backend:migrate": "cd backend && php artisan migrate:fresh --seed"
+  }
+}

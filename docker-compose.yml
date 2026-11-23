@@ -1,0 +1,46 @@
+services:
+  db:
+    image: mysql:8.4
+    container_name: rampung-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: rampung
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+  backend:
+    build:
+      context: ./backend-node
+      dockerfile: Dockerfile
+    container_name: rampung-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      PORT: 8000
+      DATABASE_URL: "mysql://root:rootpassword@db:3306/rampung"
+      CORS_ORIGIN: "http://localhost:3000,http://127.0.0.1:3000,http://localhost"
+      FRONTEND_URL: "http://localhost:3000"
+      AUTH_THROTTLE: 200
+    volumes:
+      - backend-uploads:/app/uploads
+    depends_on:
+      - db
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: rampung-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  mysql-data:
+  backend-uploads:
