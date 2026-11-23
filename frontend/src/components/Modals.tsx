@@ -241,4 +241,17 @@ const WhatsApp: React.FC = () => {
   );
 };
 
-export const GlobalModals: React.FC = () => (<><CreateTask /><CreateProject /><Pricing /><Modules /><Automation /><AI /><WhatsApp /></>);
+import { CommandPalette } from './CommandPalette';
+
+export const GlobalModals: React.FC = () => (
+  <>
+    <CreateTask />
+    <CreateProject />
+    <Pricing />
+    <Modules />
+    <Automation />
+    <AI />
+    <WhatsApp />
+    <CommandPalette />
+  </>
+);

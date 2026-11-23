@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { BarChart3, Bell, Columns3, CheckSquare, ChevronDown, Clock, Home, Inbox, LogOut, Menu, Plus, Settings, Sparkles, Store, Users, Wallet, X, UserCheck, Zap } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { BarChart3, Bell, Columns3, CheckSquare, ChevronDown, Clock, Home, Inbox, LogOut, Menu, Plus, Search, Settings, Sparkles, Store, Users, Wallet, X, UserCheck, Zap } from 'lucide-react';
 import { useApp } from '../store/AppContext';
 import { go, href } from '../store/router';
 import type { Route } from '../types';
@@ -47,6 +47,16 @@ const Sidebar: React.FC<{ route: Route; close: () => void }> = ({ route, close }
       <button type="button" onClick={() => { setModal('pricing'); close(); }} className="flex w-full cursor-pointer items-center justify-between rounded-[10px] border border-line bg-canvas px-3 py-2.5 text-left text-sm font-semibold text-arang">
         <span className="min-w-0"><span className="block truncate">{workspace.name}</span><span className="block text-xs font-normal text-arang-muted">Paket {planLabel}</span></span>
         <ChevronDown size={16} className="text-arang-muted" />
+      </button>
+
+      <button
+        type="button"
+        id="btn-sidebar-search"
+        onClick={() => { setModal('command'); close(); }}
+        className="flex w-full items-center justify-between rounded-lg border border-line bg-canvas px-3 py-2 text-xs font-medium text-arang-muted hover:border-slate-300 hover:text-arang transition shadow-xs cursor-pointer"
+      >
+        <span className="flex items-center gap-2"><Search size={14} className="text-teal-600" /> Cari apa saja...</span>
+        <kbd className="rounded border border-line bg-white px-1.5 py-0.5 text-[10px] font-mono font-semibold text-arang-muted shadow-xs">Ctrl K</kbd>
       </button>
 
       <button type="button" className="btn btn-primary w-full" onClick={() => { openCreateTask(); close(); }}><Plus size={16} />Tugas baru</button>
@@ -124,10 +134,21 @@ const BottomNav: React.FC<{ route: Route }> = ({ route }) => {
 };
 
 export const AppShell: React.FC<{ route: Route; children: React.ReactNode }> = ({ route, children }) => {
-  const { timer, tasks, timerSeconds, stopTimer, notifications, me } = useApp();
+  const { timer, tasks, timerSeconds, stopTimer, notifications, me, setModal } = useApp();
   const [open, setOpen] = useState(false);
   const unread = notifications.filter((n) => n.userId === me.id && !n.read).length;
   const running = timer ? tasks.find((t) => t.id === timer.taskId) : null;
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        setModal('command');
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [setModal]);
 
   return (
     <div className="flex min-h-screen bg-canvas">
@@ -145,7 +166,10 @@ export const AppShell: React.FC<{ route: Route; children: React.ReactNode }> = (
         <div className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-line bg-white px-4 py-2.5 lg:hidden">
           <button type="button" aria-label="Buka menu" onClick={() => setOpen(true)} className="btn-icon"><Menu size={18} /></button>
           <Logo size={26} />
-          <a href={href.inbox} aria-label="Inbox" className="btn-icon relative"><Bell size={18} />{unread > 0 && <span className="absolute -right-1 -top-1 rounded-full bg-kunyit px-1.5 text-[10px] font-bold text-kunyit-ink">{unread}</span>}</a>
+          <div className="flex items-center gap-1.5">
+            <button type="button" aria-label="Pencarian cepat" onClick={() => setModal('command')} className="btn-icon"><Search size={18} /></button>
+            <a href={href.inbox} aria-label="Inbox" className="btn-icon relative"><Bell size={18} />{unread > 0 && <span className="absolute -right-1 -top-1 rounded-full bg-kunyit px-1.5 text-[10px] font-bold text-kunyit-ink">{unread}</span>}</a>
+          </div>
         </div>
 
         {running && (

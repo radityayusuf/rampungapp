@@ -146,3 +146,16 @@ export const randomToken = (len = 24) =>
   Array.from(crypto.getRandomValues(new Uint8Array(len)), (b) => 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'[b % 57]).join('');
 
 export const pct = (part: number, total: number) => (total > 0 ? Math.round((part / total) * 100) : 0);
+
+/** Ekspor data ke file CSV dengan UTF-8 BOM untuk kompatibilitas Microsoft Excel dan sistem Indonesia */
+export const exportCsv = (filename: string, rows: (string | number | boolean | null | undefined)[][]) => {
+  const body = rows.map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const blob = new Blob(['\uFEFF' + body], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+};

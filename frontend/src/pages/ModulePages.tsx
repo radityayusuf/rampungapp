@@ -6,7 +6,7 @@ import { go, href } from '../store/router';
 import type { DealStage } from '../types';
 import { Avatar, Empty, Field, Modal, PageHeader, Pill, Progress, Segmented, Stat } from '../components/ui';
 import { DEAL_STAGES, TONE } from '../lib/meta';
-import { HARI, randomToken, addDays, diffDays, fmtClock, fmtDate, fmtDateLong, fmtDayDate, fmtDuration, isOverdue, parseISODate, pct, relDay, rupiah, rupiahJt, todayISO } from '../lib/format';
+import { HARI, randomToken, addDays, diffDays, exportCsv, fmtClock, fmtDate, fmtDateLong, fmtDayDate, fmtDuration, isOverdue, parseISODate, pct, relDay, rupiah, rupiahJt, todayISO } from '../lib/format';
 
 const shell = 'flex flex-col gap-5 px-4 py-6 sm:px-8';
 
@@ -17,13 +17,7 @@ const Locked: React.FC<{ name: string }> = ({ name }) => {
   );
 };
 
-const csv = (name: string, rows: string[][]) => {
-  const body = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([body], { type: 'text/csv' }));
-  a.download = name;
-  a.click();
-};
+const csv = (name: string, rows: (string | number | boolean | null | undefined)[][]) => exportCsv(name, rows);
 
 /* ---------------- Time Tracking ---------------- */
 export const TimePage: React.FC = () => {

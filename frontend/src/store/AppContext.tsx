@@ -213,7 +213,7 @@ interface Ctx extends Data {
   createTaskOpen: { projectId?: string; status?: TaskStatus } | null;
   openCreateTask: (o?: { projectId?: string; status?: TaskStatus }) => void;
   closeCreateTask: () => void;
-  modal: 'project' | 'pricing' | 'modules' | 'automation' | 'ai' | 'wa' | null;
+  modal: 'project' | 'pricing' | 'modules' | 'automation' | 'ai' | 'wa' | 'command' | null;
   setModal: (m: Ctx['modal']) => void;
 }
 

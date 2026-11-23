@@ -1,12 +1,12 @@
 import React, { useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, Calendar as CalendarIcon, CheckSquare, ChevronLeft, ChevronRight, Equal, MessageSquare, Paperclip, Plus, Search, Sparkles, X, Zap } from 'lucide-react';
+import { ArrowDown, ArrowUp, Calendar as CalendarIcon, CheckSquare, ChevronLeft, ChevronRight, Download, Equal, MessageSquare, Paperclip, Plus, Search, Sparkles, X, Zap } from 'lucide-react';
 import { useApp } from '../store/AppContext';
 import { useIsMobile } from '../lib/useMedia';
 import { href } from '../store/router';
 import type { ProjectView, Task, TaskStatus } from '../types';
 import { Avatar, Empty, LabelPill, Modal, Pill, PriorityText, Progress, StatusPill } from '../components/ui';
 import { PRIORITY, STATUS, STATUS_ORDER } from '../lib/meta';
-import { BULAN_PANJANG, HARI, addDays, diffDays, fmtDue, fmtDate, formatTaskKey, isOverdue, parseISODate, pct, todayISO, toISODate } from '../lib/format';
+import { BULAN_PANJANG, HARI, addDays, diffDays, exportCsv, fmtDue, fmtDate, formatTaskKey, isOverdue, parseISODate, pct, todayISO, toISODate } from '../lib/format';
 import { api, AiSummarizeResult } from '../lib/api';
 
 const VIEWS: { key: ProjectView; label: string }[] = [
@@ -434,6 +434,39 @@ export const ProjectPage: React.FC<{ projectId: string; view: ProjectView }> = (
     }
   };
 
+  const handleExportCsv = () => {
+    const rows = [
+      [
+        'Kode Tiket',
+        'Judul Tugas',
+        'Status',
+        'Prioritas',
+        'Penanggung Jawab',
+        'Label',
+        'Tanggal Mulai',
+        'Tenggat Waktu',
+        'Subtask Selesai',
+        'Total Subtask',
+        'Deskripsi',
+      ],
+      ...all.map((t) => [
+        formatTaskKey(t.id, p.shortName),
+        t.title,
+        STATUS[t.status]?.label || t.status,
+        PRIORITY[t.priority]?.label || t.priority,
+        users.find((u) => u.id === t.assigneeId)?.name || 'Belum ditugaskan',
+        t.label,
+        t.startDate || '',
+        t.dueDate,
+        subDone(t),
+        t.subtasks.length,
+        t.description || '',
+      ]),
+    ];
+    exportCsv(`${p.shortName}_Daftar_Tugas_${todayISO()}.csv`, rows);
+    notify('Berhasil mengekspor tugas', `${all.length} tugas berhasil diekspor ke file CSV/Excel.`, 'success');
+  };
+
   return (
     <div className="flex flex-col">
       <header className="flex flex-wrap items-center justify-between gap-4 px-4 pt-6 sm:px-8">
@@ -444,6 +477,7 @@ export const ProjectPage: React.FC<{ projectId: string; view: ProjectView }> = (
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex">{p.memberIds.map((id, i) => <span key={id} style={{ marginLeft: i ? -8 : 0 }}><Avatar userId={id} size={34} ring /></span>)}</div>
           <Pill bg="#E3F3F0" fg="#0B5F54" className="text-[13px] font-bold">{pct(done, all.length)}% rampung</Pill>
+          <button type="button" className="btn btn-outline" onClick={handleExportCsv} title="Ekspor daftar tugas ke CSV/Excel"><Download size={15} />Ekspor CSV</button>
           <button type="button" className="btn btn-outline" onClick={handleAiSummary}><Sparkles size={15} />Ringkas AI</button>
           {workspace.plan !== 'gratis' && <button type="button" className="btn btn-outline" onClick={() => setModal('automation')}><Zap size={15} />Otomasi · {automations.filter((a) => a.isActive).length}</button>}
           <button type="button" className="btn btn-primary" onClick={() => openCreateTask({ projectId })}><Plus size={16} />Tugas baru</button>
