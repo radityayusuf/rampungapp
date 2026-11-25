@@ -302,6 +302,7 @@ export const api = {
   plans: () => call<PlanCatalog>('/plans', { auth: false }),
   adminPlans: () => call<{ config: PlanConfig; defaults: PlanConfig }>('/system/plans'),
   saveAdminPlans: (config: PlanConfig) => call<{ config: PlanConfig }>('/system/plans', { method: 'PUT', body: config }),
+  demoCleanup: (apply: boolean) => call<{ total: number; applied: boolean; workspaces: { id: number; name: string; count: number; byCollection: Record<string, number> }[] }>('/system/demo-cleanup', { method: 'POST', body: { apply } }),
   // Pembayaran paket (superadmin)
   paymentSettings: () => call<PaymentSettings>('/system/payment-settings'),
   savePaymentSettings: (b: { accounts: Omit<BankAccount, 'id'>[]; qrisName: string; instructions: string; uniqueCode: boolean }) =>

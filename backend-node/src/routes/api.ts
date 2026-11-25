@@ -118,6 +118,7 @@ apiRouter.get('/system/users', wrap(systemCtrl.getSystemUsers));
 apiRouter.delete('/system/users/:id', wrap(systemCtrl.deleteSystemUser));
 apiRouter.patch('/system/users/:id/role', wrap(systemCtrl.updateSystemUserRole));
 apiRouter.patch('/system/workspaces/:id/plan', wrap(systemCtrl.setWorkspacePlan));
+apiRouter.post('/system/demo-cleanup', userLimiter(10), wrap(systemCtrl.demoCleanup));
 apiRouter.get('/system/plans', wrap(adminPayCtrl.getPlans));
 apiRouter.put('/system/plans', wrap(adminPayCtrl.putPlans));
 apiRouter.get('/system/payment-settings', wrap(adminPayCtrl.getSettings));

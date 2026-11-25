@@ -6,6 +6,7 @@ import { connectedClients } from '../socket';
 import { isStr, parseId } from '../validation';
 import { effectivePlan, isPlan } from '../services/plans';
 import { broadcastSync } from '../socket';
+import { cleanDemoData } from '../services/demoCleanup';
 
 function isSuperadmin(req: AuthRequest): boolean {
   return isSuperadminUser(req.user);
@@ -185,4 +186,20 @@ export async function setWorkspacePlan(req: AuthRequest, res: Response): Promise
   const ws = await prisma.workspaces.update({ where: { id }, data: { plan, plan_until: plan === 'gratis' ? null : untilDate, rev: { increment: 1 } } });
   broadcastSync(Number(id), { rev: Number(ws.rev), senderId: Number(req.user?.id ?? 0), applied: 0 });
   res.json({ id: Number(id), plan, planUntil: ws.plan_until?.toISOString() ?? null });
+}
+
+/** Periksa (apply=false) atau hapus (apply=true) data contoh lama di semua workspace. Khusus superadmin. */
+export async function demoCleanup(req: AuthRequest, res: Response): Promise<void> {
+  if (!isSuperadmin(req)) {
+    res.status(403).json({ message: 'Akses ditolak.' });
+    return;
+  }
+  const report = await cleanDemoData({ apply: req.body?.apply === true });
+  if (report.applied) {
+    for (const w of report.workspaces) {
+      const ws = await prisma.workspaces.findUnique({ where: { id: BigInt(w.id) }, select: { rev: true } });
+      if (ws) broadcastSync(w.id, { rev: Number(ws.rev), senderId: 0, applied: w.count });
+    }
+  }
+  res.json(report);
 }

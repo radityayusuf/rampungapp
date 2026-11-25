@@ -350,6 +350,49 @@ const SettingsPage: React.FC<{ onSaved: () => void }> = ({ onSaved }) => (
   </div>
 );
 
+/** Pemeliharaan: hapus data contoh lama ("Studio Nusa") yang dulu disuntikkan ke workspace. */
+const DemoCleanupPanel: React.FC = () => {
+  const { notify } = useApp();
+  const [report, setReport] = useState<Awaited<ReturnType<typeof api.demoCleanup>> | null>(null);
+  const [busy, setBusy] = useState('');
+  const run = async (apply: boolean) => {
+    if (apply && !window.confirm(`Hapus ${report?.total ?? ''} catatan data contoh dari ${report?.workspaces.length ?? ''} workspace? Data buatan pengguna tidak ikut terhapus. Tindakan ini tidak bisa dibatalkan.`)) return;
+    setBusy(apply ? 'apply' : 'check');
+    try {
+      const r = await api.demoCleanup(apply);
+      setReport(apply ? { ...r, total: 0, workspaces: [] } : r);
+      if (apply) notify('Data contoh dihapus', `${r.total} catatan dibersihkan. Pengguna yang sedang membuka Rampung akan melihat perubahan otomatis.`, 'success');
+    } catch (e) {
+      notify('Gagal memeriksa data contoh', errMsg(e));
+    } finally {
+      setBusy('');
+    }
+  };
+  return (
+    <Panel title="Pemeliharaan: data contoh lama" className="xl:col-span-2">
+      <div className="flex flex-col gap-4 text-[13.5px]">
+        <p className="m-0 text-arang-body">Versi lama Rampung menyisipkan data contoh (proyek “Website PT Sinar Jaya”, anggota Dimas/Bayu/Nadia, klien, invoice, dll.) ke workspace. Fitur ini sudah dihapus, tetapi data yang terlanjur tersimpan bisa dibersihkan di sini. Hanya catatan yang <b>ID dan isinya sama persis</b> dengan data contoh yang dihapus, beserta komentar/aktivitas yang merujuknya — data buatan pengguna tetap aman.</p>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="btn btn-outline btn-sm" disabled={!!busy} onClick={() => run(false)}>{busy === 'check' ? 'Memeriksa…' : 'Periksa data contoh'}</button>
+          {report && report.total > 0 && <button type="button" className="btn btn-sm border-0 bg-danger text-white hover:brightness-95" disabled={!!busy} onClick={() => run(true)}>{busy === 'apply' ? 'Menghapus…' : `Hapus ${report.total} catatan data contoh`}</button>}
+        </div>
+        {report && (report.total === 0 ? (
+          <span className="flex items-center gap-2 font-semibold text-brand"><CheckCircle2 size={15} />Tidak ada data contoh. Database sudah bersih.</span>
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-line">
+            {report.workspaces.map((w, i) => (
+              <div key={w.id} className={`flex flex-wrap items-center justify-between gap-2 px-4 py-3 ${i ? 'border-t border-line-soft' : ''}`}>
+                <span className="font-semibold">{w.name} <span className="font-normal text-arang-muted">#{w.id}</span></span>
+                <span className="text-xs text-arang-muted">{w.count} catatan · {Object.entries(w.byCollection).map(([c, n]) => `${c} ${n}`).join(', ')}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+};
+
 const SystemPage: React.FC<{ stats: SystemStats | null }> = ({ stats }) => {
   const [integ, setInteg] = useState<IntegrationStatus | null>(null);
   useEffect(() => { api.integrationStatus().then(setInteg).catch(() => undefined); }, []);
@@ -387,6 +430,7 @@ const SystemPage: React.FC<{ stats: SystemStats | null }> = ({ stats }) => {
         </div>
         <p className="m-0 mt-3 text-xs text-arang-muted">Kunci layanan diisi di <code>backend-node/.env</code>, lalu periksa dengan <code>npm run check:integrations</code>.</p>
       </Panel>
+      <DemoCleanupPanel />
     </div>
   );
 };
