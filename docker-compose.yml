@@ -26,6 +26,8 @@ services:
       FRONTEND_URL: "http://localhost:3000"
       AUTH_THROTTLE: 200
       GOOGLE_CLIENT_ID: "995698868481-o9re5ai2jm1ccnnamri95c3s68hdctmh.apps.googleusercontent.com"
+      # Superadmin platform (berlaku setelah email diverifikasi lewat login Google)
+      SUPERADMIN_EMAILS: "amaniaevent@gmail.com"
     volumes:
       - backend-uploads:/app/uploads
     depends_on:

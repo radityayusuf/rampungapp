@@ -12,7 +12,8 @@
     "db:studio": "prisma studio",
     "test": "vitest run",
     "check:integrations": "tsx scripts/check-integrations.ts",
-    "test:email": "tsx scripts/send-test-email.ts"
+    "test:email": "tsx scripts/send-test-email.ts",
+    "start:prod": "prisma db push --skip-generate && node dist/index.js"
   },
   "dependencies": {
     "@prisma/client": "^6.2.0",
