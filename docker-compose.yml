@@ -23,11 +23,19 @@ services:
       PORT: 8000
       DATABASE_URL: "mysql://root:rootpassword@db:3306/rampung"
       CORS_ORIGIN: "http://localhost:3000,http://127.0.0.1:3000,http://localhost,https://rampung.biz,http://rampung.biz"
-      FRONTEND_URL: "http://localhost:3000"
+      # Alamat web yang tampil di tautan email (undangan, reset sandi). Isi PUBLIC_URL di .env server.
+      FRONTEND_URL: "${PUBLIC_URL:-http://localhost:3000}"
       AUTH_THROTTLE: 200
       GOOGLE_CLIENT_ID: "995698868481-o9re5ai2jm1ccnnamri95c3s68hdctmh.apps.googleusercontent.com"
       # Superadmin platform (berlaku setelah email diverifikasi lewat login Google)
       SUPERADMIN_EMAILS: "amaniaevent@gmail.com"
+      # Email (SMTP) — nilainya dibaca dari berkas .env di server (tidak masuk git). Lihat .env.example.
+      SMTP_HOST: "${SMTP_HOST:-}"
+      SMTP_PORT: "${SMTP_PORT:-587}"
+      SMTP_SECURE: "${SMTP_SECURE:-false}"
+      SMTP_USER: "${SMTP_USER:-}"
+      SMTP_PASS: "${SMTP_PASS:-}"
+      MAIL_FROM: "${MAIL_FROM:-Rampung <no-reply@rampung.id>}"
     volumes:
       - backend-uploads:/app/uploads
     depends_on:
