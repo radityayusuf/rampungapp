@@ -128,7 +128,7 @@ export const PlanPaymentPanel: React.FC<{ pay: PlanPayment; info: PaymentInfo; c
             <CopyBtn value={String(pay.amount)} label="nominal" dark />
           </div>
           <span className="text-[12.5px]" style={{ color: '#9FB0B8' }}>
-            {m.seats} anggota × {rupiah(m.pricePerUserMonth)} × {m.period === 'yearly' ? `${Math.round(pay.baseAmount / Math.max(1, m.pricePerUserMonth * m.seats))} bulan (berlaku 12 bulan)` : '1 bulan'} = {rupiah(pay.baseAmount)}
+            {m.flat ? `Paket ${LABEL[m.plan] ?? m.plan}${m.memberLimit ? ` (sampai ${m.memberLimit} anggota)` : ''} × ${m.period === 'yearly' ? `${Math.round(pay.baseAmount / Math.max(1, m.pricePerMonth ?? 1))} bulan (berlaku 12 bulan)` : '1 bulan'}` : `${m.seats} anggota × ${rupiah(m.pricePerUserMonth ?? 0)} × ${m.period === 'yearly' ? `${Math.round(pay.baseAmount / Math.max(1, (m.pricePerUserMonth ?? 1) * m.seats))} bulan (berlaku 12 bulan)` : '1 bulan'}`} = {rupiah(pay.baseAmount)}
             {pay.uniqueCode > 0 && <> + kode unik <b style={{ color: '#F2B33D' }}>{pay.uniqueCode}</b></>}
           </span>
         </div>

@@ -8,7 +8,7 @@ import { AuthRequest } from '../types';
 import { isStr } from '../validation';
 import { getPaymentSettings, isPaymentConfigured, publicPaymentInfo, sniffProof } from '../services/paymentSettings';
 import { PAYMENT_TTL_HOURS, PROOF_MAX_BYTES, metaOf, presentPayment, statusOf } from '../services/payments';
-import { LIMITS, MONTHS_CHARGED, PLAN_LABEL, PLAN_RUNTIME, PRICE_PER_USER_MONTH, atLeast, isActiveProject, quote } from '../services/plans';
+import { LIMITS, MONTHS_CHARGED, PLAN_LABEL, PLAN_RUNTIME, PLAN_PRICE_MONTH, atLeast, isActiveProject, quote } from '../services/plans';
 import type { PaidPlan, Period } from '../services/plans';
 import { activeProjectCount, memberCount, planOf } from '../services/workspacePlan';
 import { broadcastSync } from '../socket';
@@ -71,7 +71,7 @@ export async function getBilling(req: AuthRequest, res: Response): Promise<void>
     trialAvailable: PLAN_RUNTIME.trialDays > 0 && !p.trialUsed && !atLeast(p.plan, 'pro'),
     trialDays: PLAN_RUNTIME.trialDays,
     seats,
-    prices: PRICE_PER_USER_MONTH,
+    prices: PLAN_PRICE_MONTH, // harga tetap per paket per bulan
     periods: MONTHS_CHARGED,
     limits: LIMITS[p.plan],
     usage: {
@@ -125,14 +125,20 @@ export async function checkout(req: AuthRequest, res: Response): Promise<void> {
   }
 
   const wsId = user.workspace_id!;
-  const q = quote(plan as PaidPlan, period as Period, await memberCount(wsId));
-  const meta = { plan, period, seats: q.seats, months: q.months, pricePerUserMonth: q.pricePerUserMonth };
+  const members = await memberCount(wsId);
+  const q = quote(plan as PaidPlan, period as Period, members);
+  // Anggota yang sudah ada tidak boleh melebihi batas paket yang dibeli.
+  if (q.memberLimit !== null && members > q.memberLimit) {
+    res.status(422).json({ message: `Workspace Anda memiliki ${members} anggota, melebihi batas paket ${PLAN_LABEL[plan as PaidPlan]} (${q.memberLimit} anggota). Pilih paket yang lebih besar atau keluarkan anggota terlebih dahulu.`, memberLimit: q.memberLimit, members });
+    return;
+  }
+  const meta = { plan, period, seats: q.seats, months: q.months, pricePerMonth: q.pricePerMonth, flat: true, memberLimit: q.memberLimit };
 
   // Pakai ulang tagihan yang masih aktif untuk pembelian yang sama persis.
   const open = await prisma.payments.findMany({ where: { workspace_id: wsId, kind: 'plan', status: { in: ['pending', 'submitted'] }, base_amount: BigInt(q.amount) }, orderBy: { id: 'desc' } });
   const same = open.find((p) => {
     const m = metaOf(p);
-    return statusOf(p) !== 'expired' && m.plan === plan && m.period === period && m.seats === q.seats;
+    return statusOf(p) !== 'expired' && m.plan === plan && m.period === period;
   });
   if (same) {
     res.json(presentPayment(same));

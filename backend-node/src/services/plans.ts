@@ -1,7 +1,7 @@
 /**
  * Aturan paket Rampung — satu sumber kebenaran di server.
  * Harga dan batas mengikuti dokumen konsep: Gratis (maks. 5 anggota, 3 proyek aktif, 1 GB),
- * Pro Rp35.000 dan Bisnis Rp75.000 per pengguna per bulan, tahunan = 10 bulan ("hemat 2 bulan").
+ * Paket bertingkat berharga tetap: Pro dan Bisnis ditagih per paket per bulan dengan batas anggota (bukan per pengguna); tahunan = 10 bulan ("hemat 2 bulan").
  */
 
 export const PLANS = ['gratis', 'pro', 'bisnis', 'enterprise'] as const;
@@ -9,7 +9,8 @@ export type Plan = (typeof PLANS)[number];
 export type PaidPlan = 'pro' | 'bisnis';
 export type Period = 'monthly' | 'yearly';
 
-export const PRICE_PER_USER_MONTH: Record<PaidPlan, number> = { pro: 35_000, bisnis: 75_000 };
+/** Harga TETAP per paket per bulan (bukan per pengguna). Batas anggota paket ada di LIMITS. */
+export const PLAN_PRICE_MONTH: Record<PaidPlan, number> = { pro: 149_000, bisnis: 349_000 };
 export const MONTHS_CHARGED: Record<Period, { months: number; charged: number }> = {
   monthly: { months: 1, charged: 1 },
   yearly: { months: 12, charged: 10 },
@@ -60,10 +61,10 @@ export function sanitizeModules(plan: Plan, raw: unknown): Record<string, boolea
   return out;
 }
 
+/** Tagihan paket: harga tetap × bulan ditagih. `seats` hanya dicatat sebagai informasi (jumlah anggota saat membeli). */
 export function quote(plan: PaidPlan, period: Period, seats: number) {
-  const s = Math.max(1, Math.floor(seats));
   const { months, charged } = MONTHS_CHARGED[period];
-  return { amount: PRICE_PER_USER_MONTH[plan] * s * charged, months, seats: s, pricePerUserMonth: PRICE_PER_USER_MONTH[plan] };
+  return { amount: PLAN_PRICE_MONTH[plan] * charged, months, seats: Math.max(1, Math.floor(seats)), pricePerMonth: PLAN_PRICE_MONTH[plan], memberLimit: LIMITS[plan].members };
 }
 
 export function addMonths(d: Date, months: number): Date {

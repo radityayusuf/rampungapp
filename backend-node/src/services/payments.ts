@@ -21,7 +21,11 @@ export interface PlanMeta {
   period?: string;
   seats?: number;
   months?: number;
-  pricePerUserMonth?: number;
+  pricePerUserMonth?: number; // tagihan lama (per pengguna)
+  /** Tagihan baru: harga tetap per paket. */
+  pricePerMonth?: number;
+  flat?: boolean;
+  memberLimit?: number | null;
   transfer?: { method?: string; senderName?: string; note?: string };
 }
 

@@ -17,7 +17,7 @@ const FALLBACK: PlanCatalog = {
     desc: p.desc,
     items: p.items,
     popular: !!p.popular,
-    limits: p.key === 'gratis' ? { members: 5, activeProjects: 3, storageGb: 1 } : { members: null, activeProjects: null, storageGb: null },
+    limits: p.key === 'gratis' ? { members: 5, activeProjects: 3, storageGb: 1 } : p.key === 'pro' ? { members: 10, activeProjects: null, storageGb: null } : p.key === 'bisnis' ? { members: 30, activeProjects: null, storageGb: null } : { members: null, activeProjects: null, storageGb: null },
   })),
 };
 

@@ -107,10 +107,10 @@ export const PlansEditor: React.FC = () => {
         <a href={href.landing} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[13px] font-semibold">Lihat halaman harga <ExternalLink size={13} /></a>
       </div>
 
-      <Card title="Harga & tagihan" desc="Harga per pengguna per bulan dalam rupiah.">
+      <Card title="Harga & tagihan" desc={'Harga TETAP per paket per bulan dalam rupiah (bukan per pengguna). Batas anggota tiap paket diatur di tabel "Batas per paket" di bawah.'}>
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-5">
-          <NumField id="price-pro" label="Harga Pro" prefix="Rp" value={draft.prices.pro} min={1000} max={100000000} step={1000} onChange={(n) => set('prices', { ...draft.prices, pro: n })} hint={Number.isFinite(draft.prices.pro) ? `${rupiah(draft.prices.pro)} / pengguna / bulan` : undefined} />
-          <NumField id="price-bisnis" label="Harga Bisnis" prefix="Rp" value={draft.prices.bisnis} min={1000} max={100000000} step={1000} onChange={(n) => set('prices', { ...draft.prices, bisnis: n })} hint={Number.isFinite(draft.prices.bisnis) ? `${rupiah(draft.prices.bisnis)} / pengguna / bulan` : undefined} />
+          <NumField id="price-pro" label="Harga paket Pro" prefix="Rp" value={draft.prices.pro} min={1000} max={100000000} step={1000} onChange={(n) => set('prices', { ...draft.prices, pro: n })} hint={Number.isFinite(draft.prices.pro) ? `${rupiah(draft.prices.pro)} / bulan · sampai ${draft.limits.pro.members ?? '∞'} anggota` : undefined} />
+          <NumField id="price-bisnis" label="Harga paket Bisnis" prefix="Rp" value={draft.prices.bisnis} min={1000} max={100000000} step={1000} onChange={(n) => set('prices', { ...draft.prices, bisnis: n })} hint={Number.isFinite(draft.prices.bisnis) ? `${rupiah(draft.prices.bisnis)} / bulan · sampai ${draft.limits.bisnis.members ?? '∞'} anggota` : undefined} />
           <NumField id="yearly" label="Tagihan tahunan dibayar" suffix="bulan" value={draft.yearlyChargedMonths} min={1} max={12} onChange={(n) => set('yearlyChargedMonths', n)} hint={saving > 0 ? `Pembeli hemat ${saving} bulan per tahun` : 'Tanpa potongan tahunan'} />
           <NumField id="trial" label="Uji coba Pro" suffix="hari" value={draft.trialDays} min={0} max={90} onChange={(n) => set('trialDays', n)} hint={draft.trialDays === 0 ? 'Uji coba dimatikan' : 'Sekali per workspace'} />
           <NumField id="pro-mods" label="Modul bisnis paket Pro" suffix="modul" value={draft.proBusinessModules} min={0} max={4} onChange={(n) => set('proBusinessModules', n)} hint="Dari CRM, Keuangan, Time Tracking, SDM" />

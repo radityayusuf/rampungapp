@@ -110,13 +110,13 @@ Nilai bawaan:
 | Paket | Harga | Batas & fitur |
 |---|---|---|
 | Gratis | Rp0 | 5 anggota, 3 proyek aktif, 1 GB; modul bisnis nonaktif |
-| Pro | Rp35.000/anggota/bulan | Tanpa batas; 1 modul bisnis (Time Tracking/CRM/Keuangan/SDM) |
-| Bisnis | Rp75.000/anggota/bulan | Semua modul, Integrasi, WhatsApp, Asisten AI, webhook, portal klien |
+| Pro | Rp149.000/tim/bulan | Sampai 10 anggota; proyek tanpa batas; 1 modul bisnis (Time Tracking/CRM/Keuangan/SDM) |
+| Bisnis | Rp349.000/tim/bulan | Sampai 30 anggota; semua modul, Integrasi, WhatsApp, Asisten AI, webhook, portal klien |
 | Enterprise | Negosiasi | Ditetapkan Superadmin di **Workspace & paket** |
 
 - Workspace baru mulai di **Gratis**. Pemilik membeli lewat **Pengaturan → Kelola paket** dalam tiga langkah:
   **pilih paket** (kartu terpilih + ringkasan pesanan) → **bayar & unggah bukti** → **verifikasi**.
-- Server membuat tagihan (anggota × harga × bulan, tahunan dibayar 10 bulan untuk 12, **+ kode unik Rp1–999**, berlaku 48 jam).
+- **Harga tetap per tim** (paket bertingkat, bukan per pengguna): server membuat tagihan harga paket × bulan ditagih (tahunan dibayar 10 bulan untuk 12), **+ kode unik Rp1–999**, berlaku 48 jam. Batas anggota paket ditegakkan server; checkout ditolak bila anggota saat ini melebihi batas paket yang dipilih.
   Pembeli transfer lewat QRIS/rekening, mengunggah bukti (PNG/JPG/WebP/PDF, maks 5 MB), lalu Superadmin menyetujui atau
   menolak dengan alasan. Beralih paket membatalkan tagihan lama yang belum dibayar. Bukti hanya bisa dibuka pembeli dan Superadmin.
 - Perpanjangan paket yang sama ditambahkan ke akhir masa aktif; tidak diperpanjang otomatis; masa habis → kembali ke Gratis.
@@ -144,6 +144,6 @@ menu akun → "Panel Superadmin" untuk berpindah.
 ## Pengujian
 
 ```bash
-cd backend-node && npm test     # 219 tes (memakai database terpisah rampung_test, dibuat otomatis)
+cd backend-node && npm test     # 224 tes (memakai database terpisah rampung_test, dibuat otomatis)
 cd frontend && npm test         # tes unit
 ```

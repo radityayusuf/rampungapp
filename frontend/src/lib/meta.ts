@@ -52,8 +52,8 @@ export const MODULES: { key: ModuleKey; name: string; desc: string; minPlan: Pla
 
 export const PLANS: { key: Plan; name: string; monthly: number | null; unit: string; desc: string; cta: string; items: string[]; popular?: boolean }[] = [
   { key: 'gratis', name: 'Gratis', monthly: 0, unit: 'sampai 5 anggota', desc: 'Untuk tim kecil yang baru mulai.', cta: 'Mulai gratis', items: ['Board, List, dan Kalender', '3 proyek aktif', 'Komentar dan @mention', 'Penyimpanan 1 GB'] },
-  { key: 'pro', name: 'Pro', monthly: 35000, unit: 'per pengguna per bulan', desc: 'Untuk tim yang butuh perencanaan lengkap.', cta: 'Coba Pro 14 hari', popular: true, items: ['Proyek tanpa batas', 'Timeline/Gantt dan dependensi', 'Otomasi', '1 modul bisnis pilihan'] },
-  { key: 'bisnis', name: 'Bisnis', monthly: 75000, unit: 'per pengguna per bulan', desc: 'Untuk agensi dan perusahaan yang melayani klien.', cta: 'Pilih Bisnis', items: ['Semua modul bisnis', 'Portal klien', 'Integrasi WhatsApp & otomasi', 'Invoice dan pelunasan klien'] },
+  { key: 'pro', name: 'Pro', monthly: 149000, unit: 'per bulan · sampai 10 anggota', desc: 'Untuk tim yang butuh perencanaan lengkap.', cta: 'Coba Pro 14 hari', popular: true, items: ['Proyek tanpa batas', 'Timeline/Gantt dan dependensi', 'Otomasi', '1 modul bisnis pilihan'] },
+  { key: 'bisnis', name: 'Bisnis', monthly: 349000, unit: 'per bulan · sampai 30 anggota', desc: 'Untuk agensi dan perusahaan yang melayani klien.', cta: 'Pilih Bisnis', items: ['Semua modul bisnis', 'Portal klien', 'Integrasi WhatsApp & otomasi', 'Invoice dan pelunasan klien'] },
   { key: 'enterprise', name: 'Enterprise', monthly: null, unit: 'harga sesuai kebutuhan', desc: 'Untuk organisasi dengan kebutuhan khusus.', cta: 'Hubungi kami', items: ['Semua fitur Bisnis', 'Harga dan kontrak khusus', 'Bantuan instalasi di server sendiri', 'Pendampingan onboarding tim'] },
 ];
 

@@ -2,7 +2,7 @@ import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '../src/db';
 import { DEFAULT_PLAN_CONFIG, getPlanConfig, loadPlanConfig, resetPlanConfig } from '../src/services/planConfig';
-import { LIMITS, PRICE_PER_USER_MONTH } from '../src/services/plans';
+import { LIMITS, PLAN_PRICE_MONTH } from '../src/services/plans';
 import { app, auth, push, resetDb, signUp } from './helpers';
 
 
@@ -25,7 +25,7 @@ describe('katalog paket publik', () => {
     expect(r.body.trialDays).toBe(14);
     expect(r.body.yearlyChargedMonths).toBe(10);
     const pro = r.body.plans.find((p: { key: string }) => p.key === 'pro');
-    expect(pro).toMatchObject({ monthly: 35_000, popular: true });
+    expect(pro).toMatchObject({ monthly: 149_000, popular: true, limits: { members: 10 } });
     expect(r.body.plans.find((p: { key: string }) => p.key === 'gratis').limits).toEqual({ members: 5, activeProjects: 3, storageGb: 1 });
   });
 });
@@ -41,7 +41,8 @@ describe('Superadmin mengelola paket & batas', () => {
   it('validasi: harga, urutan harga, periode, uji coba, modul, batas, deskripsi, jumlah fitur', async () => {
     const s = await superadmin();
     const bad: [Record<string, unknown>, string][] = [
-      [{ prices: { pro: 500, bisnis: 75_000 } }, 'Harga Pro dan Bisnis'],
+      [{ prices: { pro: 500, bisnis: 349_000 } }, 'Harga paket Pro dan Bisnis'],
+      [{ limits: { ...DEFAULT_PLAN_CONFIG.limits, pro: { members: 30, activeProjects: null, storageGb: null }, bisnis: { members: 10, activeProjects: null, storageGb: null } } }, 'Batas anggota Bisnis'],
       [{ prices: { pro: 80_000, bisnis: 75_000 } }, 'tidak boleh lebih murah'],
       [{ yearlyChargedMonths: 13 }, 'Tagihan tahunan'],
       [{ trialDays: 120 }, 'uji coba'],
@@ -73,7 +74,7 @@ describe('Superadmin mengelola paket & batas', () => {
     // katalog publik ikut berubah
     const pub = (await request(app).get('/api/plans')).body;
     expect(pub.plans.find((p: { key: string }) => p.key === 'pro')).toMatchObject({ monthly: 50_000, desc: 'Paket tim yang sedang tumbuh.', items: ['Proyek tanpa batas', 'Otomasi'] });
-    expect(PRICE_PER_USER_MONTH.pro).toBe(50_000);
+    expect(PLAN_PRICE_MONTH.pro).toBe(50_000);
     expect(LIMITS.gratis.storageBytes).toBe(Math.round(0.5 * 1024 ** 3));
 
     const owner = await signUp('Pemilik');
@@ -108,9 +109,9 @@ describe('Superadmin mengelola paket & batas', () => {
     const s = await superadmin();
     await put(s.token, cfg({ prices: { pro: 40_000, bisnis: 80_000 }, proBusinessModules: 2 })).expect(200);
     resetPlanConfig(); // seolah server baru dinyalakan
-    expect(PRICE_PER_USER_MONTH.pro).toBe(35_000);
+    expect(PLAN_PRICE_MONTH.pro).toBe(149_000);
     await loadPlanConfig();
-    expect(PRICE_PER_USER_MONTH.pro).toBe(40_000);
+    expect(PLAN_PRICE_MONTH.pro).toBe(40_000);
     expect(getPlanConfig().proBusinessModules).toBe(2);
     expect((await request(app).get('/api/system/plans').set(auth(s.token)).expect(200)).body.config.prices.pro).toBe(40_000);
   });

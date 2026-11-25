@@ -1,5 +1,5 @@
 import { prisma } from '../db';
-import { LIMITS, MONTHS_CHARGED, PLAN_RUNTIME, PRICE_PER_USER_MONTH } from './plans';
+import { LIMITS, MONTHS_CHARGED, PLAN_RUNTIME, PLAN_PRICE_MONTH } from './plans';
 import type { Plan } from './plans';
 
 /**
@@ -22,14 +22,14 @@ const KEY = 'plans';
 const GB = 1024 ** 3;
 
 export const DEFAULT_PLAN_CONFIG: PlanConfig = {
-  prices: { pro: 35_000, bisnis: 75_000 },
+  prices: { pro: 149_000, bisnis: 349_000 },
   yearlyChargedMonths: 10,
   trialDays: 14,
   proBusinessModules: 1,
   limits: {
     gratis: { members: 5, activeProjects: 3, storageGb: 1 },
-    pro: { members: null, activeProjects: null, storageGb: null },
-    bisnis: { members: null, activeProjects: null, storageGb: null },
+    pro: { members: 10, activeProjects: null, storageGb: null },
+    bisnis: { members: 30, activeProjects: null, storageGb: null },
   },
   catalog: {
     gratis: { desc: 'Untuk tim kecil yang baru mulai.', items: ['Board, List, dan Kalender', '3 proyek aktif', 'Komentar dan @mention', 'Penyimpanan 1 GB'] },
@@ -45,8 +45,8 @@ export const getPlanConfig = (): PlanConfig => current;
 /** Salin konfigurasi ke tabel aturan yang dipakai seluruh server. */
 function apply(cfg: PlanConfig) {
   current = cfg;
-  PRICE_PER_USER_MONTH.pro = cfg.prices.pro;
-  PRICE_PER_USER_MONTH.bisnis = cfg.prices.bisnis;
+  PLAN_PRICE_MONTH.pro = cfg.prices.pro;
+  PLAN_PRICE_MONTH.bisnis = cfg.prices.bisnis;
   MONTHS_CHARGED.yearly.charged = cfg.yearlyChargedMonths;
   PLAN_RUNTIME.trialDays = cfg.trialDays;
   PLAN_RUNTIME.proBusinessModules = cfg.proBusinessModules;
@@ -95,7 +95,7 @@ export function parsePlanConfig(body: unknown): { error: string } | { value: Pla
   const prices = (b.prices ?? {}) as Record<string, unknown>;
   const pro = int(prices.pro, 1_000, 100_000_000);
   const bisnis = int(prices.bisnis, 1_000, 100_000_000);
-  if (pro === undefined || bisnis === undefined) return { error: 'Harga Pro dan Bisnis harus bilangan bulat antara Rp1.000 dan Rp100.000.000.' };
+  if (pro === undefined || bisnis === undefined) return { error: 'Harga paket Pro dan Bisnis (per bulan) harus bilangan bulat antara Rp1.000 dan Rp100.000.000.' };
   if (bisnis < pro) return { error: 'Harga Bisnis tidak boleh lebih murah dari Pro.' };
 
   const yearly = int(b.yearlyChargedMonths, 1, 12);
@@ -117,6 +117,10 @@ export function parsePlanConfig(body: unknown): { error: string } | { value: Pla
     if (storage === undefined) return { error: `Batas penyimpanan paket ${LABEL[p]} harus 0,1–100.000 GB atau tanpa batas.` };
     limits[p] = { members, activeProjects: projects, storageGb: storage === null ? null : Math.round(storage * 100) / 100 };
   }
+
+  const proM = limits.pro.members;
+  const bisM = limits.bisnis.members;
+  if (proM === null ? bisM !== null : bisM !== null && bisM < proM) return { error: 'Batas anggota Bisnis tidak boleh lebih kecil dari Pro.' };
 
   const catIn = (b.catalog ?? {}) as Record<string, Record<string, unknown>>;
   const catalog = {} as PlanConfig['catalog'];

@@ -108,7 +108,7 @@ export interface UploadResult {
 
 export type PaymentStatus = 'pending' | 'submitted' | 'paid' | 'rejected' | 'expired';
 export interface PlanPurchaseMeta {
-  plan: 'pro' | 'bisnis'; period: 'monthly' | 'yearly'; seats: number; months: number; pricePerUserMonth: number;
+  plan: 'pro' | 'bisnis'; period: 'monthly' | 'yearly'; seats: number; months: number; pricePerMonth?: number; flat?: boolean; memberLimit?: number | null; pricePerUserMonth?: number;
   transfer?: { method?: 'qris' | 'bank'; senderName?: string; note?: string };
 }
 /** Satu tagihan paket. Nominal = harga paket + kode unik; semuanya dihitung server. */

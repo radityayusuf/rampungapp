@@ -106,7 +106,10 @@ export const Pricing: React.FC = () => {
     return () => window.clearInterval(t);
   }, [open, pay, waiting, notify, refreshNow, load]);
 
-  const total = (plan: Buyable, per: Period = period) => (info ? info.prices[plan] * info.seats * info.periods[per].charged : 0);
+  const total = (plan: Buyable, per: Period = period) => (info ? info.prices[plan] * info.periods[per].charged : 0);
+  const limitOf = (plan: string) => catalog.plans.find((p) => p.key === plan)?.limits.members ?? null;
+  /** Paket yang batas anggotanya lebih kecil dari jumlah anggota sekarang tidak bisa dibeli. */
+  const tooSmall = (plan: Buyable) => { const m = limitOf(plan); return !!info && m !== null && info.seats > m; };
 
   /** Lanjut ke pembayaran: pakai tagihan yang sama bila cocok; bila beralih paket, tagihan lama yang belum dibayar dibatalkan. */
   const proceed = async () => {
@@ -150,7 +153,7 @@ export const Pricing: React.FC = () => {
 
   const stepIndex = step === 'choose' ? 0 : pay?.status === 'paid' ? 3 : pay?.status === 'submitted' ? 2 : 1;
   const lockedByReview = pay?.status === 'submitted';
-  const blockReason = !info ? '' : !info.paymentsConfigured ? 'Tujuan pembayaran belum diatur administrator.' : !info.canPurchase ? 'Hanya pemilik workspace yang dapat membeli paket.' : lockedByReview ? 'Pembayaran sebelumnya sedang diverifikasi.' : '';
+  const blockReason = !info ? '' : tooSmall(selected) ? `Anggota Anda (${info.seats}) melebihi batas paket ${LABEL[selected]} (${limitOf(selected)}). Pilih paket yang lebih besar atau keluarkan anggota.` : !info.paymentsConfigured ? 'Tujuan pembayaran belum diatur administrator.' : !info.canPurchase ? 'Hanya pemilik workspace yang dapat membeli paket.' : lockedByReview ? 'Pembayaran sebelumnya sedang diverifikasi.' : '';
 
   return (
     <Modal open={open} onClose={() => setModal(null)} title="Kelola paket" size="xl">
@@ -208,7 +211,7 @@ export const Pricing: React.FC = () => {
               {/* ── Pilihan paket ── */}
               <div className="flex flex-col gap-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <span className="text-[13px] text-arang-muted">Harga per pengguna · dihitung untuk <b className="text-arang">{info.seats} anggota</b> saat ini</span>
+                  <span className="text-[13px] text-arang-muted">Harga tetap per tim · workspace Anda saat ini berisi <b className="text-arang">{info.seats} anggota</b></span>
                   <div role="radiogroup" aria-label="Periode tagihan" className="inline-flex gap-1 rounded-xl border border-line bg-white p-1 text-[13px] shadow-xs">
                     {(['monthly', 'yearly'] as const).map((p) => (
                       <button key={p} type="button" role="radio" aria-checked={period === p} onClick={() => setPeriod(p)} className={`h-8 cursor-pointer rounded-lg border-0 px-3.5 font-semibold transition ${period === p ? 'bg-[#0E171C] text-white' : 'bg-transparent text-arang-body hover:bg-canvas'}`}>
@@ -246,12 +249,13 @@ export const Pricing: React.FC = () => {
                         {isCur && <span className="absolute -top-2.5 left-5 rounded-full bg-[#0E171C] px-2.5 py-0.5 text-[10.5px] font-bold text-white">Paket Anda</span>}
                         <span className="flex flex-col">
                           <span className="text-[26px] font-extrabold leading-tight tracking-tight text-arang">{rupiah(price)}</span>
-                          <span className="text-[12px] text-arang-muted">{p.key === 'gratis' ? `maks. ${limitText(p.limits.members)} anggota` : 'per pengguna / bulan'}</span>
+                          <span className="text-[12px] text-arang-muted">{p.key === 'gratis' ? `maks. ${limitText(p.limits.members)} anggota` : `per bulan · sampai ${limitText(p.limits.members)} anggota`}</span>
                         </span>
                         <span className="text-[12.5px] text-arang-body">{p.desc}</span>
                         <ul className="m-0 flex list-none flex-col gap-1.5 border-t border-line-soft p-0 pt-3 text-[13px] text-arang">
                           {p.items.map((i) => <li key={i} className="flex gap-2"><Check size={14} className="mt-0.5 shrink-0 text-brand" />{i}</li>)}
                         </ul>
+                        {buyable && tooSmall(p.key as Buyable) && <span className="mt-auto rounded-lg bg-danger-soft px-2.5 py-1.5 text-[12px] font-semibold text-danger">Anggota Anda ({info.seats}) melebihi batas paket ini</span>}
                         {!buyable && <span className="mt-auto text-[12px] text-arang-muted">{isCur ? 'Paket Anda sekarang' : 'Otomatis bila masa paket habis'}</span>}
                       </button>
                     );
@@ -272,10 +276,10 @@ export const Pricing: React.FC = () => {
                   <div className="text-[13px]" style={{ color: '#9FB0B8' }}>{period === 'yearly' ? 'Tahunan · berlaku 12 bulan' : 'Bulanan · berlaku 1 bulan'}</div>
                 </div>
                 <div className="flex flex-col gap-2 border-y border-white/10 py-4 text-[13px]" style={{ color: '#C9D1D6' }}>
-                  <div className="flex justify-between"><span>Harga</span><span>{rupiah(info.prices[selected])} / pengguna</span></div>
-                  <div className="flex justify-between"><span>Anggota</span><span>× {info.seats}</span></div>
+                  <div className="flex justify-between"><span>Harga paket</span><span>{rupiah(info.prices[selected])} / bulan</span></div>
+                  <div className="flex justify-between"><span>Batas anggota</span><span>sampai {limitText(limitOf(selected))}</span></div>
                   <div className="flex justify-between"><span>Durasi ditagih</span><span>× {info.periods[period].charged} bulan</span></div>
-                  {period === 'yearly' && saving > 0 && <div className="flex justify-between" style={{ color: '#F2B33D' }}><span>Hemat</span><span>−{rupiah(info.prices[selected] * info.seats * saving)}</span></div>}
+                  {period === 'yearly' && saving > 0 && <div className="flex justify-between" style={{ color: '#F2B33D' }}><span>Hemat</span><span>−{rupiah(info.prices[selected] * saving)}</span></div>}
                 </div>
                 <div className="flex items-end justify-between">
                   <span className="text-[13px]" style={{ color: '#9FB0B8' }}>Total</span>

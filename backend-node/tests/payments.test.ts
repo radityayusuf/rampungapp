@@ -103,15 +103,15 @@ describe('pembelian paket: tagihan manual', () => {
     }
   });
 
-  it('nominal dihitung server (harga × anggota × bulan) + kode unik 1–999; tagihan sama dipakai ulang; berlaku 48 jam', async () => {
+  it('nominal dihitung server (harga tetap paket × bulan) + kode unik 1–999; tagihan sama dipakai ulang; berlaku 48 jam', async () => {
     const s = await superadmin();
     await configurePayments(s.token);
     const { owner } = await team(); // 2 anggota
     const r = await checkout(owner.token, { plan: 'pro', period: 'monthly' }).expect(201);
-    expect(r.body).toMatchObject({ status: 'pending', baseAmount: 70_000, meta: { plan: 'pro', period: 'monthly', seats: 2, months: 1 } });
+    expect(r.body).toMatchObject({ status: 'pending', baseAmount: 149_000, meta: { plan: 'pro', period: 'monthly', seats: 2, months: 1 } });
     expect(r.body.uniqueCode).toBeGreaterThanOrEqual(1);
     expect(r.body.uniqueCode).toBeLessThanOrEqual(999);
-    expect(r.body.amount).toBe(70_000 + r.body.uniqueCode);
+    expect(r.body.amount).toBe(149_000 + r.body.uniqueCode);
     expect(r.body.orderId).toMatch(/^RMP-\d+-[0-9A-F]{10}$/);
     const hours = (new Date(r.body.expiresAt).getTime() - Date.now()) / 3600_000;
     expect(hours).toBeGreaterThan(47.9);
@@ -134,7 +134,7 @@ describe('pembelian paket: tagihan manual', () => {
 
     await sys(s.token).put('/payment-settings', { accounts: ACCOUNTS, uniqueCode: false }).expect(200);
     const z = await signUp('Tanpa');
-    expect((await checkout(z.token, { plan: 'pro', period: 'monthly' }).expect(201)).body).toMatchObject({ uniqueCode: 0, amount: 35_000 });
+    expect((await checkout(z.token, { plan: 'pro', period: 'monthly' }).expect(201)).body).toMatchObject({ uniqueCode: 0, amount: 149_000 });
   });
 
   it('tagihan kedaluwarsa tampil "expired" dan boleh dibuat ulang; pembatalan hanya untuk yang belum ada bukti', async () => {
@@ -154,6 +154,54 @@ describe('pembelian paket: tagihan manual', () => {
     const r3 = await checkout(a.token, { plan: 'pro', period: 'monthly' }).expect(201);
     await proof(a.token, r3.body.orderId).expect(200);
     await request(app).post(`/api/billing/payments/${r3.body.orderId}/cancel`).set(auth(a.token)).expect(409);
+  });
+});
+
+describe('paket bertingkat berharga tetap', () => {
+  it('nominal sama untuk tim 1 maupun 9 anggota; tidak dikalikan jumlah anggota', async () => {
+    const s = await superadmin();
+    await configurePayments(s.token, { uniqueCode: false });
+    const solo = await signUp('Sendiri');
+    const owner = await signUp('Ramai');
+    await setPlan(owner.workspaceId, 'pro'); // batas 10 anggota, cukup untuk 9
+    for (let i = 1; i <= 8; i++) {
+      const inv = await request(app).post('/api/invites').set(auth(owner.token)).send({ email: `r${i}@test.id`, role: 'member' }).expect(201);
+      await signUp(`R${i}`, { email: `r${i}@test.id`, invite: inv.body.token });
+    }
+    expect(await prisma.users.count({ where: { workspace_id: BigInt(owner.workspaceId) } })).toBe(9);
+    const a = (await checkout(solo.token, { plan: 'pro', period: 'monthly' }).expect(201)).body;
+    const b = (await checkout(owner.token, { plan: 'pro', period: 'monthly' }).expect(201)).body;
+    expect(a.amount).toBe(149_000);
+    expect(b.amount).toBe(149_000);
+    expect(b.meta).toMatchObject({ flat: true, seats: 9, memberLimit: 10, pricePerMonth: 149_000 });
+  });
+
+  it('checkout ditolak bila anggota saat ini melebihi batas paket; paket lebih besar tetap bisa', async () => {
+    const s = await superadmin();
+    await configurePayments(s.token);
+    const owner = await signUp('Pemilik');
+    await setPlan(owner.workspaceId, 'bisnis'); // longgarkan batas undangan agar bisa mengisi 11 anggota
+    for (let i = 1; i <= 10; i++) {
+      const inv = await request(app).post('/api/invites').set(auth(owner.token)).send({ email: `m${i}@test.id`, role: 'member' }).expect(201);
+      await signUp(`M${i}`, { email: `m${i}@test.id`, invite: inv.body.token });
+    }
+    await setPlan(owner.workspaceId, 'gratis');
+    const r = await checkout(owner.token, { plan: 'pro', period: 'monthly' }).expect(422);
+    expect(r.body.message).toContain('11 anggota');
+    expect(r.body.message).toContain('batas paket Pro (10 anggota)');
+    expect(r.body).toMatchObject({ memberLimit: 10, members: 11 });
+    await checkout(owner.token, { plan: 'bisnis', period: 'monthly' }).expect(201); // batas 30
+  });
+
+  it('batas anggota paket ditegakkan setelah dibeli: undangan ke-11 di Pro ditolak, di Bisnis boleh', async () => {
+    const owner = await signUp('Pemilik');
+    await setPlan(owner.workspaceId, 'pro');
+    const invite = (email: string) => request(app).post('/api/invites').set(auth(owner.token)).send({ email, role: 'member' });
+    for (let i = 1; i <= 9; i++) await invite(`u${i}@test.id`).expect(201); // 1 pemilik + 9 undangan = 10
+    const full = await invite('u10@test.id').expect(402);
+    expect(full.body.message).toContain('10 anggota');
+    await setPlan(owner.workspaceId, 'bisnis');
+    await invite('u10@test.id').expect(201);
   });
 });
 
@@ -263,7 +311,7 @@ describe('verifikasi superadmin', () => {
     await setPlan(a.workspaceId, 'bisnis', 10);
     const until = (await ws(a.workspaceId)).plan_until!;
     const r = (await checkout(a.token, { plan: 'bisnis', period: 'yearly' }).expect(201)).body;
-    expect(r.baseAmount).toBe(750_000); // 75.000 × 1 × 10
+    expect(r.baseAmount).toBe(3_490_000); // 349.000 × 10 bulan (harga tetap per paket)
     const id = (await prisma.payments.findFirst({ where: { order_id: r.orderId } }))!.id;
     await sys(s.token).post(`/payments/${id}/approve`).expect(200);
     expect((await ws(a.workspaceId)).plan_until!.getTime()).toBe(addMonths(until, 12).getTime());

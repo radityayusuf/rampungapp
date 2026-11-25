@@ -358,7 +358,7 @@ export const Landing: React.FC = () => {
           <div className="mx-auto flex max-w-[680px] flex-col items-center gap-4 text-center">
             <Eyebrow>Harga</Eyebrow>
             <h2 className="m-0 text-[34px] font-extrabold leading-tight tracking-[-0.03em] md:text-[44px]">Harga rupiah yang jujur.</h2>
-            <p className="m-0 text-[16px] text-arang-body">Bayar per anggota. Tidak diperpanjang otomatis — Anda yang memutuskan.</p>
+            <p className="m-0 text-[16px] text-arang-body">Harga tetap per tim, bukan per pengguna — tambah anggota tanpa biaya tambahan sampai batas paket. Tidak diperpanjang otomatis.</p>
             <div role="group" aria-label="Periode tagihan" className="mt-2 inline-flex gap-1 rounded-xl border border-line bg-white p-1 text-[14px] shadow-card">
               <button type="button" aria-pressed={!yearly} onClick={() => setYearly(false)} className={`h-9 cursor-pointer rounded-lg border-0 px-4 font-semibold transition ${!yearly ? 'bg-[#0E171C] text-white' : 'bg-transparent text-arang-body'}`}>Bulanan</button>
               <button type="button" aria-pressed={yearly} onClick={() => setYearly(true)} className={`h-9 cursor-pointer rounded-lg border-0 px-4 font-semibold transition ${yearly ? 'bg-[#0E171C] text-white' : 'bg-transparent text-arang-body'}`}>Tahunan {saving > 0 && <span className="ml-1 rounded-md bg-kunyit-soft px-1.5 text-[11px] font-bold" style={{ color: '#6B4A00' }}>hemat {saving} bulan</span>}</button>
@@ -367,7 +367,7 @@ export const Landing: React.FC = () => {
           <div className="grid items-stretch gap-5 md:grid-cols-2 lg:grid-cols-4">
             {catalog.plans.map((p) => {
               const dark = !!p.popular;
-              const unit = p.key === 'gratis' ? `sampai ${limitText(p.limits.members)} anggota` : p.monthly === null ? 'harga sesuai kebutuhan' : 'per pengguna per bulan';
+              const unit = p.key === 'gratis' ? `sampai ${limitText(p.limits.members)} anggota` : p.monthly === null ? 'harga sesuai kebutuhan' : `per tim / bulan · sampai ${limitText(p.limits.members)} anggota`;
               const cta = p.key === 'gratis' ? 'Mulai gratis' : p.key === 'pro' ? (catalog.trialDays > 0 ? `Coba Pro ${catalog.trialDays} hari` : 'Pilih Pro') : p.key === 'bisnis' ? 'Pilih Bisnis' : 'Hubungi kami';
               return (
                 <div key={p.key} className={`relative flex flex-col gap-5 rounded-2xl p-7 ${dark ? 'bg-[#0E171C] text-white shadow-[0_30px_80px_-30px_rgba(14,23,28,.7)] lg:-my-3' : 'border border-line bg-white shadow-card'}`} style={dark ? { color: '#fff' } : undefined}>
@@ -378,7 +378,7 @@ export const Landing: React.FC = () => {
                   </div>
                   <div className="flex flex-col">
                     <span className={`font-extrabold tracking-[-0.02em] ${p.monthly === null ? "text-[26px] leading-[1.3]" : "text-[34px]"}`}>{price(p.monthly)}</span>
-                    <span className="text-[13px]" style={{ color: dark ? '#AEBAC1' : '#5B6670' }}>{p.monthly ? (yearly ? 'per pengguna per tahun' : unit) : unit}</span>
+                    <span className="text-[13px]" style={{ color: dark ? '#AEBAC1' : '#5B6670' }}>{p.monthly ? (yearly ? `per tim / tahun · sampai ${limitText(p.limits.members)} anggota` : unit) : unit}</span>
                   </div>
                   <a href={p.key === 'enterprise' ? '#faq' : href.daftar} onClick={p.key === 'enterprise' ? (e) => scrollTo(e, '#faq') : undefined}
                     className={`inline-flex h-11 items-center justify-center rounded-xl text-[14.5px] font-bold transition ${dark ? 'bg-[#F2B33D] hover:brightness-105' : 'border border-line bg-white hover:border-line-strong hover:bg-canvas-subtle'}`}

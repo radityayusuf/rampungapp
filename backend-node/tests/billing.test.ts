@@ -13,9 +13,10 @@ beforeEach(async () => {
 });
 
 describe('aturan paket (unit)', () => {
-  it('harga sesuai konsep: per pengguna per bulan, tahunan dibayar 10 bulan untuk 12 bulan', () => {
-    expect(quote('pro', 'monthly', 4)).toMatchObject({ amount: 140_000, months: 1, seats: 4 });
-    expect(quote('bisnis', 'yearly', 3)).toMatchObject({ amount: 2_250_000, months: 12 });
+  it('harga tetap per paket (tidak bergantung jumlah anggota); tahunan dibayar 10 bulan untuk 12 bulan', () => {
+    expect(quote('pro', 'monthly', 4)).toMatchObject({ amount: 149_000, months: 1, seats: 4, memberLimit: 10 });
+    expect(quote('pro', 'monthly', 9).amount).toBe(quote('pro', 'monthly', 1).amount);
+    expect(quote('bisnis', 'yearly', 3)).toMatchObject({ amount: 3_490_000, months: 12, memberLimit: 30 });
     expect(quote('pro', 'monthly', 0).seats).toBe(1);
   });
 
@@ -42,7 +43,7 @@ describe('aturan paket (unit)', () => {
 describe('paket ditentukan server, bukan klien', () => {
   it('workspace baru = Gratis; klien tidak bisa mengaku Enterprise lewat sinkronisasi', async () => {
     const a = await signUp();
-    expect((await billing(a.token).expect(200)).body).toMatchObject({ plan: 'gratis', planUntil: null, trialAvailable: true, prices: { pro: 35000, bisnis: 75000 } });
+    expect((await billing(a.token).expect(200)).body).toMatchObject({ plan: 'gratis', planUntil: null, trialAvailable: true, prices: { pro: 149000, bisnis: 349000 } });
 
     await push(a.token, [{ c: 'workspace', id: 'ws', data: { id: 'ws', name: 'Saya', plan: 'enterprise', enabledModules: { crm: true, finance: true, aiAssistant: true } } }]).expect(200);
     const w = (await request(app).get('/api/sync').set(auth(a.token))).body.collections.workspace[0];
