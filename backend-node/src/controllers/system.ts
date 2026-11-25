@@ -1,10 +1,14 @@
 import { Response } from 'express';
 import { prisma } from '../db';
 import { AuthRequest } from '../types';
+import { isSuperadminUser } from '../superadmin';
+import { connectedClients } from '../socket';
+import { isStr, parseId } from '../validation';
+import { effectivePlan, isPlan } from '../services/plans';
+import { broadcastSync } from '../socket';
 
 function isSuperadmin(req: AuthRequest): boolean {
-  const u = req.user;
-  return !!u && (u.role === 'superadmin' || u.email === 'admin@rampung.biz' || u.email === 'radityaysf06@gmail.com');
+  return isSuperadminUser(req.user);
 }
 
 export async function getSystemStats(req: AuthRequest, res: Response): Promise<void> {
@@ -12,6 +16,12 @@ export async function getSystemStats(req: AuthRequest, res: Response): Promise<v
     res.status(403).json({ message: 'Akses ditolak: Hanya Administrator Sistem yang dapat mengakses.' });
     return;
   }
+
+  // Diukur sungguhan: versi dan waktu tanggap database, bukan teks tetap.
+  const t0 = Date.now();
+  const [{ v: dbVersion }] = await prisma.$queryRaw<{ v: string }[]>`SELECT VERSION() AS v`;
+  const dbLatencyMs = Date.now() - t0;
+  const ws = connectedClients();
 
   const [totalUsers, totalWorkspaces, totalRecords, totalUploads, storageSum] = await Promise.all([
     prisma.users.count(),
@@ -30,8 +40,9 @@ export async function getSystemStats(req: AuthRequest, res: Response): Promise<v
     serverUptimeSeconds: Math.floor(process.uptime()),
     nodeVersion: process.version,
     memoryUsageMB: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
-    database: 'MySQL 8 (Connected)',
-    websocket: 'Socket.io Active',
+    database: `MySQL ${dbVersion}`,
+    dbLatencyMs,
+    websocket: ws === null ? 'Tidak aktif' : `${ws} klien terhubung`,
     timestamp: new Date().toISOString(),
   });
 }
@@ -60,6 +71,8 @@ export async function getSystemWorkspaces(req: AuthRequest, res: Response): Prom
       ownerEmail: owner?.email || '-',
       memberCount: wsUsers.length,
       recordCount: recordMap.get(Number(w.id)) || 0,
+      plan: effectivePlan(w),
+      planUntil: w.plan_until,
       createdAt: w.created_at,
     };
   });
@@ -99,14 +112,24 @@ export async function deleteSystemUser(req: AuthRequest, res: Response): Promise
     return;
   }
 
-  const targetId = Number(req.params.id);
-  if (!targetId || targetId === Number(req.user?.id)) {
+  const target = parseId(req.params.id);
+  if (target === null) {
+    res.status(404).json({ message: 'Pengguna tidak ditemukan.' });
+    return;
+  }
+  if (target === req.user?.id) {
     res.status(422).json({ message: 'Tidak dapat menghapus akun Anda sendiri.' });
     return;
   }
 
-  await prisma.api_tokens.deleteMany({ where: { user_id: BigInt(targetId) } });
-  await prisma.users.delete({ where: { id: BigInt(targetId) } });
+  const found = await prisma.users.findUnique({ where: { id: target } });
+  if (!found) {
+    res.status(404).json({ message: 'Pengguna tidak ditemukan.' });
+    return;
+  }
+
+  await prisma.api_tokens.deleteMany({ where: { user_id: target } });
+  await prisma.users.delete({ where: { id: target } });
 
   res.json({ message: 'Pengguna berhasil dihapus dari sistem.' });
 }
@@ -117,18 +140,49 @@ export async function updateSystemUserRole(req: AuthRequest, res: Response): Pro
     return;
   }
 
-  const targetId = Number(req.params.id);
-  const { role } = req.body;
+  const target = parseId(req.params.id);
+  const role = req.body?.role;
   const allowed = ['superadmin', 'owner', 'admin', 'member'];
-  if (!allowed.includes(role)) {
+  if (!isStr(role) || !allowed.includes(role)) {
     res.status(422).json({ message: 'Role tidak valid.' });
     return;
   }
+  if (target === null || !(await prisma.users.findUnique({ where: { id: target } }))) {
+    res.status(404).json({ message: 'Pengguna tidak ditemukan.' });
+    return;
+  }
 
-  await prisma.users.update({
-    where: { id: BigInt(targetId) },
-    data: { role },
-  });
+  await prisma.users.update({ where: { id: target }, data: { role } });
 
   res.json({ message: 'Role pengguna berhasil diperbarui.', role });
+}
+
+/** Superadmin menetapkan paket workspace secara manual (mis. Enterprise hasil negosiasi, kompensasi). */
+export async function setWorkspacePlan(req: AuthRequest, res: Response): Promise<void> {
+  if (!isSuperadmin(req)) {
+    res.status(403).json({ message: 'Akses ditolak.' });
+    return;
+  }
+  const id = parseId(req.params.id);
+  const plan = req.body?.plan;
+  const until = req.body?.until;
+  if (!isPlan(plan)) {
+    res.status(422).json({ message: 'Paket tidak valid.' });
+    return;
+  }
+  let untilDate: Date | null = null;
+  if (until !== undefined && until !== null) {
+    untilDate = typeof until === 'string' ? new Date(until) : new Date(NaN);
+    if (Number.isNaN(untilDate.getTime()) || untilDate.getTime() <= Date.now() || untilDate.getFullYear() > 2037) {
+      res.status(422).json({ message: 'Tanggal berlaku harus di masa depan (paling lambat 2037).' });
+      return;
+    }
+  }
+  if (id === null || !(await prisma.workspaces.findUnique({ where: { id } }))) {
+    res.status(404).json({ message: 'Workspace tidak ditemukan.' });
+    return;
+  }
+  const ws = await prisma.workspaces.update({ where: { id }, data: { plan, plan_until: plan === 'gratis' ? null : untilDate, rev: { increment: 1 } } });
+  broadcastSync(Number(id), { rev: Number(ws.rev), senderId: Number(req.user?.id ?? 0), applied: 0 });
+  res.json({ id: Number(id), plan, planUntil: ws.plan_until?.toISOString() ?? null });
 }

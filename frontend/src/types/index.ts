@@ -15,7 +15,6 @@ export interface User {
   phone?: string;
   role: 'owner' | 'admin' | 'member' | 'client' | 'superadmin';
   title?: string;
-  demo?: boolean; // anggota contoh (bukan akun nyata)
 }
 
 export interface Subtask {
@@ -43,6 +42,8 @@ export interface Attachment {
 
 export interface Task {
   id: string;
+  /** Nomor urut tiket per proyek (kunci tiket = AWALAN-nomor). Tugas lama tanpa nomor diurutkan dari waktu pembuatan. */
+  num?: number;
   projectId: string;
   title: string;
   description: string;
@@ -97,6 +98,8 @@ export interface Workspace {
   id: string;
   name: string;
   plan: Plan;
+  /** Diisi server: paket berbayar berlaku sampai (null = Gratis/tanpa batas). */
+  planUntil?: string | null;
   enabledModules: Record<ModuleKey, boolean>;
   whatsappNumber?: string;
   whatsappConnected: boolean;
@@ -164,6 +167,9 @@ export interface Invoice {
   dueDate: string;
   status: 'unpaid' | 'paid';
   paidAt?: string;
+  /** qris = dibayar lewat Midtrans (diverifikasi server); manual = dikonfirmasi admin. */
+  paymentMethod?: 'qris' | 'manual';
+  paymentRef?: string;
 }
 
 export interface Attendance {
@@ -239,6 +245,9 @@ export type Route =
   | { page: 'gabung'; token: string }
   | { page: 'portal'; token: string }
   | { page: 'lupa' }
-  | { page: 'admin-sistem' }
+  | { page: 'admin'; section: AdminSection }
   | { page: 'notfound' }
   | { page: 'reset'; token: string; email: string };
+
+/** Bagian Panel Superadmin (#/admin/:bagian). */
+export type AdminSection = 'ringkasan' | 'workspace' | 'pengguna' | 'paket' | 'pembayaran' | 'pengaturan' | 'sistem';

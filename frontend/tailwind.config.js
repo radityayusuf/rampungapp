@@ -48,7 +48,13 @@ export default {
         sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
       },
       borderRadius: {
-        card: '14px',
+        card: '12px',
+      },
+      boxShadow: {
+        xs: '0 1px 2px rgba(16,24,40,.05)',
+        card: '0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.04)',
+        lift: '0 4px 14px rgba(16,24,40,.10), 0 1px 3px rgba(16,24,40,.06)',
+        pop: '0 12px 32px rgba(16,24,40,.14), 0 2px 6px rgba(16,24,40,.06)',
       },
     },
   },

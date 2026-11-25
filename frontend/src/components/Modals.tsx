@@ -1,42 +1,134 @@
 import React, { useEffect, useState } from 'react';
-import { Check, Sparkles, Trash2 } from 'lucide-react';
+import { Sparkles, Trash2 } from 'lucide-react';
 import { useApp } from '../store/AppContext';
 import { go, href } from '../store/router';
-import type { AutomationAction, AutomationTrigger, Plan, Priority, TaskStatus } from '../types';
-import { Field, Modal, Pill } from './ui';
-import { LABELS, MODULES, PLANS, PLAN_RANK, PRIORITY, STATUS, STATUS_ORDER } from '../lib/meta';
-import { relDay, rupiah, todayISO } from '../lib/format';
+import type { AutomationAction, AutomationTrigger, Priority, TaskStatus } from '../types';
+import { Field, Modal, Pill, PriorityIcon } from './ui';
+import { LABELS, MODULES, PRIORITY, STATUS, STATUS_ORDER } from '../lib/meta';
+import { relDay, todayISO, errMsg } from '../lib/format';
 import { TEMPLATES } from '../lib/templates';
+import { Pricing } from './Pricing';
 import { api } from '../lib/api';
 
 const CreateTask: React.FC = () => {
-  const { createTaskOpen, closeCreateTask, projects, users, createTask, me } = useApp();
-  const blank = { title: '', projectId: '', status: 'todo' as TaskStatus, priority: 'medium' as Priority, assigneeId: me.id, label: 'Manajemen', dueDate: relDay(3), description: '' };
-  const [f, setF] = useState(blank);
-  useEffect(() => {
-    if (createTaskOpen) setF({ ...blank, projectId: createTaskOpen.projectId ?? projects[0]?.id ?? '', status: createTaskOpen.status ?? 'todo' });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [createTaskOpen]);
+  const { createTaskOpen } = useApp();
+  // Formulir dipasang ulang setiap dialog dibuka, sehingga nilai awal ditetapkan SAAT render pertama
+  // (bukan lewat useEffect yang bisa kalah balapan dengan ketikan pertama pengguna).
+  return createTaskOpen ? <CreateTaskDialog opts={createTaskOpen} /> : null;
+};
+
+const CreateTaskDialog: React.FC<{ opts: { projectId?: string; status?: TaskStatus } }> = ({ opts }) => {
+  const { closeCreateTask, projects, users, createTask, me, notify } = useApp();
+  const blank = (projectId: string) => ({
+    title: '',
+    projectId,
+    status: opts.status ?? ('todo' as TaskStatus),
+    priority: 'medium' as Priority,
+    assigneeId: me.id,
+    label: 'Manajemen',
+    dueDate: relDay(3),
+    estimatedHours: '' as string,
+    isMilestone: false,
+    description: '',
+  });
+  const [f, setF] = useState(() => blank(opts.projectId && projects.some((p) => p.id === opts.projectId) ? opts.projectId : projects[0]?.id ?? ''));
+  const [another, setAnother] = useState(false);
+  const [tried, setTried] = useState(false);
+  // Pembaruan fungsional: tidak pernah menimpa perubahan lain dengan salinan state yang sudah usang.
+  const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((prev) => ({ ...prev, [k]: v }));
+  const ready = f.title.trim().length > 0 && projects.some((p) => p.id === f.projectId);
+
   const submit = (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!f.title.trim() || !f.projectId) return;
-    const t = createTask({ ...f, title: f.title.trim(), startDate: todayISO() < f.dueDate ? todayISO() : f.dueDate });
+    setTried(true);
+    if (!ready) return;
+    const { estimatedHours, ...rest } = f;
+    const t = createTask({ ...rest, title: f.title.trim(), estimatedHours: estimatedHours ? Number(estimatedHours) : undefined, startDate: todayISO() < f.dueDate ? todayISO() : f.dueDate });
+    if (another) {
+      setF((prev) => ({ ...blank(prev.projectId), status: prev.status, assigneeId: prev.assigneeId, label: prev.label }));
+      setTried(false);
+      notify('Tugas dibuat', 'Silakan isi tugas berikutnya.', 'success');
+      document.getElementById('nt')?.focus();
+      return;
+    }
     closeCreateTask();
     go(href.tugas(t.id));
   };
+
+  const row = 'grid gap-1.5 sm:grid-cols-[150px_minmax(0,360px)] sm:items-center sm:gap-4';
+  const lbl = 'text-[13px] font-semibold text-arang-body';
+
   return (
-    <Modal open={!!createTaskOpen} onClose={closeCreateTask} title="Tugas baru" footer={<><button type="button" className="btn btn-outline" onClick={closeCreateTask}>Batal</button><button type="button" className="btn btn-primary" disabled={!f.title.trim()} onClick={() => submit()}>Buat tugas</button></>}>
-      <form onSubmit={submit} className="flex flex-col gap-4">
-        <Field label="Judul tugas" htmlFor="nt"><input id="nt" autoFocus className="input" placeholder="Contoh: Desain halaman kontak" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} /></Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Proyek" htmlFor="np"><select id="np" className="input" value={f.projectId} onChange={(e) => setF({ ...f, projectId: e.target.value })}>{projects.map((p) => <option key={p.id} value={p.id}>{p.shortName}</option>)}</select></Field>
-          <Field label="Kolom" htmlFor="ns"><select id="ns" className="input" value={f.status} onChange={(e) => setF({ ...f, status: e.target.value as TaskStatus })}>{STATUS_ORDER.map((s) => <option key={s} value={s}>{STATUS[s].label}</option>)}</select></Field>
-          <Field label="Penanggung jawab" htmlFor="na"><select id="na" className="input" value={f.assigneeId} onChange={(e) => setF({ ...f, assigneeId: e.target.value })}>{users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></Field>
-          <Field label="Tenggat" htmlFor="nd"><input id="nd" type="date" className="input" value={f.dueDate} onChange={(e) => e.target.value && setF({ ...f, dueDate: e.target.value })} /></Field>
-          <Field label="Prioritas" htmlFor="npr"><select id="npr" className="input" value={f.priority} onChange={(e) => setF({ ...f, priority: e.target.value as Priority })}>{(Object.keys(PRIORITY) as Priority[]).map((x) => <option key={x} value={x}>{PRIORITY[x].label}</option>)}</select></Field>
-          <Field label="Label" htmlFor="nl"><select id="nl" className="input" value={f.label} onChange={(e) => setF({ ...f, label: e.target.value })}>{Object.keys(LABELS).map((x) => <option key={x}>{x}</option>)}</select></Field>
+    <Modal
+      open
+      wide
+      onClose={closeCreateTask}
+      title="Buat tugas"
+      footer={
+        <div className="flex w-full flex-wrap items-center justify-between gap-3">
+          <label className="flex cursor-pointer items-center gap-2 text-[13px] text-arang-body"><input type="checkbox" checked={another} onChange={(e) => setAnother(e.target.checked)} style={{ accentColor: '#0B7A6B' }} />Buat tugas lain setelah ini</label>
+          <div className="flex gap-2">
+            <button type="button" className="btn btn-ghost" onClick={closeCreateTask}>Batal</button>
+            <button type="button" className="btn btn-primary" disabled={!projects.length} onClick={() => submit()}>Buat tugas</button>
+          </div>
         </div>
-        <Field label="Deskripsi (opsional)" htmlFor="ndsc"><textarea id="ndsc" className="input min-h-[80px]" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} /></Field>
+      }
+    >
+      <form onSubmit={submit} className="flex flex-col gap-4">
+        <p className="m-0 text-xs text-arang-muted">Kolom bertanda <span style={{ color: '#B42318' }}>*</span> wajib diisi.</p>
+        {!projects.length && <span role="alert" className="text-sm font-semibold" style={{ color: '#8A5A00' }}>Buat proyek terlebih dahulu sebelum menambah tugas.</span>}
+
+        <div className={row}>
+          <label htmlFor="np" className={lbl}>Proyek <span style={{ color: '#B42318' }}>*</span></label>
+          <select id="np" className="input" value={f.projectId} onChange={(e) => set('projectId', e.target.value)}>{!projects.some((p) => p.id === f.projectId) && <option value="">Pilih proyek…</option>}{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+        </div>
+        <div className={row}>
+          <label htmlFor="ntype" className={lbl}>Jenis tugas</label>
+          <div className="flex items-center gap-2">
+            <select id="ntype" className="input" value={f.isMilestone ? 'milestone' : 'task'} onChange={(e) => set('isMilestone', e.target.value === 'milestone')}><option value="task">Tugas</option><option value="milestone">Milestone</option></select>
+          </div>
+        </div>
+
+        <hr className="my-1 border-0 border-t border-line-soft" />
+
+        <div className={row}>
+          <label htmlFor="ns" className={lbl}>Status awal</label>
+          <select id="ns" className="input" value={f.status} onChange={(e) => set('status', e.target.value as TaskStatus)}>{STATUS_ORDER.map((s) => <option key={s} value={s}>{STATUS[s].label}</option>)}</select>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="nt" className={lbl}>Ringkasan <span style={{ color: '#B42318' }}>*</span></label>
+          <input id="nt" autoFocus className="input" maxLength={200} placeholder="Contoh: Desain halaman kontak" value={f.title} onChange={(e) => set('title', e.target.value)} aria-invalid={tried && !f.title.trim()} style={tried && !f.title.trim() ? { borderColor: '#B42318' } : undefined} />
+          {tried && !f.title.trim() && <span role="alert" className="text-xs font-semibold" style={{ color: '#B42318' }}>Ringkasan wajib diisi.</span>}
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="ndsc" className={lbl}>Deskripsi</label>
+          <textarea id="ndsc" className="input min-h-[110px]" placeholder="Jelaskan tujuan, langkah, atau kriteria selesai…" value={f.description} onChange={(e) => set('description', e.target.value)} />
+        </div>
+
+        <div className={row}>
+          <label htmlFor="na" className={lbl}>Penanggung jawab</label>
+          <div className="flex flex-col items-start gap-1">
+            <select id="na" className="input" value={f.assigneeId} onChange={(e) => set('assigneeId', e.target.value)}>{users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select>
+            {f.assigneeId !== me.id && <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-[13px] font-semibold text-brand hover:underline" onClick={() => set('assigneeId', me.id)}>Tugaskan ke saya</button>}
+          </div>
+        </div>
+        <div className={row}>
+          <label htmlFor="npr" className={lbl}>Prioritas</label>
+          <div className="flex items-center gap-2"><PriorityIcon priority={f.priority} /><select id="npr" className="input" value={f.priority} onChange={(e) => set('priority', e.target.value as Priority)}>{(Object.keys(PRIORITY) as Priority[]).map((x) => <option key={x} value={x}>{PRIORITY[x].label}</option>)}</select></div>
+        </div>
+        <div className={row}>
+          <label htmlFor="nl" className={lbl}>Label</label>
+          <select id="nl" className="input" value={f.label} onChange={(e) => set('label', e.target.value)}>{Object.keys(LABELS).map((x) => <option key={x}>{x}</option>)}</select>
+        </div>
+        <div className={row}>
+          <label htmlFor="nd" className={lbl}>Tenggat</label>
+          <input id="nd" type="date" className="input" value={f.dueDate} onChange={(e) => e.target.value && set('dueDate', e.target.value)} />
+        </div>
+        <div className={row}>
+          <label htmlFor="nest" className={lbl}>Estimasi (jam)</label>
+          <input id="nest" type="number" min={0} step={0.5} className="input" placeholder="mis. 4" value={f.estimatedHours} onChange={(e) => set('estimatedHours', e.target.value)} />
+        </div>
         <button type="submit" className="sr-only">Buat</button>
       </form>
     </Modal>
@@ -51,8 +143,9 @@ const CreateProject: React.FC = () => {
   const submit = () => {
     if (!f.name.trim()) return;
     let spaceId = f.spaceId || spaces[0]?.id;
-    if (f.newSpace.trim()) { createSpace(f.newSpace.trim()); spaceId = ''; }
+    if (f.newSpace.trim()) spaceId = createSpace(f.newSpace.trim());
     const p = createProject({ name: f.name.trim(), shortName: f.name.trim(), spaceId, clientId: f.clientId || undefined, dueDate: f.dueDate, budget: Number(f.budget) * 1_000_000 || 0, memberIds: [me.id] }, f.template);
+    if (!p) return;
     setF({ name: '', spaceId: '', clientId: '', dueDate: relDay(30), budget: '', newSpace: '', template: 'kosong' });
     close();
     go(href.proyek(p.id));
@@ -69,34 +162,6 @@ const CreateProject: React.FC = () => {
         </div>
         <Field label="Template" htmlFor="ptpl" hint={TEMPLATES.find((t) => t.key === f.template)?.desc}><select id="ptpl" className="input" value={f.template} onChange={(e) => setF({ ...f, template: e.target.value })}>{TEMPLATES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}</select></Field>
         <Field label="Anggaran (juta rupiah, opsional)" htmlFor="pb"><input id="pb" type="number" min={0} className="input" value={f.budget} onChange={(e) => setF({ ...f, budget: e.target.value })} /></Field>
-      </div>
-    </Modal>
-  );
-};
-
-const Pricing: React.FC = () => {
-  const { modal, setModal, workspace, upgradePlan, notify } = useApp();
-  const [yearly, setYearly] = useState(false);
-  const price = (m: number | null) => (m === null ? 'Hubungi kami' : m === 0 ? 'Rp0' : rupiah(yearly ? m * 10 : m));
-  const choose = (p: Plan) => {
-    if (p === 'enterprise') { notify('Tim kami akan menghubungi', 'Permintaan demo Enterprise dicatat (simulasi).'); return; }
-    upgradePlan(p);
-    setModal(null);
-  };
-  return (
-    <Modal open={modal === 'pricing'} onClose={() => setModal(null)} title="Pilih paket Rampung" wide>
-      <div className="flex flex-col gap-5">
-        <div className="flex flex-wrap items-center justify-between gap-3"><span className="text-sm text-arang-muted">Harga per pengguna, dalam rupiah. Pembayaran lewat QRIS dalam mode demo disimulasikan.</span>
-          <div role="group" aria-label="Periode tagihan" className="inline-flex gap-1 rounded-[10px] bg-canvas-seg p-1 text-sm"><button type="button" aria-pressed={!yearly} onClick={() => setYearly(false)} className="h-9 cursor-pointer rounded-lg border-0 px-3.5" style={!yearly ? { background: '#fff', fontWeight: 700 } : { background: 'transparent' }}>Bulanan</button><button type="button" aria-pressed={yearly} onClick={() => setYearly(true)} className="h-9 cursor-pointer rounded-lg border-0 px-3.5" style={yearly ? { background: '#fff', fontWeight: 700 } : { background: 'transparent' }}>Tahunan · hemat 2 bulan</button></div></div>
-        <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))' }}>
-          {PLANS.map((p) => { const cur = workspace.plan === p.key; return (
-            <div key={p.key} className="flex flex-col gap-3 rounded-card bg-white p-4" style={{ border: p.popular ? '2px solid #0B7A6B' : '1px solid #E2E5E1' }}>
-              <div className="flex items-center justify-between"><h3 className="m-0 text-base font-bold">{p.name}</h3>{p.popular && <Pill bg="#E3F3F0" fg="#0B5F54" className="font-bold">Populer</Pill>}</div>
-              <div><div className="text-2xl font-extrabold">{price(p.monthly)}</div><div className="text-xs text-arang-muted">{p.monthly ? (yearly ? 'per pengguna per tahun' : p.unit) : p.unit}</div></div>
-              <ul className="m-0 flex list-none flex-col gap-1.5 p-0 text-[13px]">{p.items.map((i) => <li key={i} className="flex gap-2"><Check size={14} color="#0B7A6B" className="mt-0.5 shrink-0" />{i}</li>)}</ul>
-              <button type="button" disabled={cur} onClick={() => choose(p.key)} className={`btn mt-auto ${p.popular && !cur ? 'btn-primary' : 'btn-outline'}`}>{cur ? 'Paket saat ini' : PLAN_RANK[p.key] < PLAN_RANK[workspace.plan] ? 'Turun ke ' + p.name : p.cta}</button>
-            </div>); })}
-        </div>
       </div>
     </Modal>
   );
@@ -147,36 +212,30 @@ const Automation: React.FC = () => {
 };
 
 const AI: React.FC = () => {
-  const { modal, setModal, projects, createTask, notify } = useApp();
+  const { modal, setModal, projects, createTask, notify, mode, integrations } = useApp();
   const [idea, setIdea] = useState('');
   const [projectId, setProjectId] = useState('');
   const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState('');
+  const [source, setSource] = useState<{ kind: 'ai' | 'template'; model?: string } | null>(null);
   const [list, setList] = useState<{ title: string; label: string; days: number }[]>([]);
   const close = () => setModal(null);
+
   const gen = async () => {
     const x = idea.trim();
     if (!x) return;
     setLoading(true);
+    setErr('');
+    setList([]);
     try {
       const res = await api.aiBreakdown({ title: x });
-      const daysOffset = [2, 5, 8, 12, 16, 20];
-      setList(res.subtasks.map((s, idx) => ({
-        title: s.title,
-        label: res.suggestedLabel || 'Manajemen',
-        days: daysOffset[idx % daysOffset.length],
-      })));
-      notify('Asisten AI Rampung', res.advice || 'Tugas berhasil dipecah.');
-    } catch {
-      // Fallback lokal jika backend tidak terjangkau
-      setList([
-        { title: `Riset kebutuhan: ${x}`, label: 'Riset', days: 3 },
-        { title: `Susun ruang lingkup dan target: ${x}`, label: 'Manajemen', days: 5 },
-        { title: `Desain konsep awal: ${x}`, label: 'Desain', days: 9 },
-        { title: `Kerjakan implementasi: ${x}`, label: 'Backend', days: 16 },
-        { title: `Siapkan konten dan materi: ${x}`, label: 'Konten', days: 18 },
-        { title: `Uji dan perbaikan: ${x}`, label: 'Manajemen', days: 22 },
-        { title: `Peluncuran dan laporan: ${x}`, label: 'Marketing', days: 25 },
-      ]);
+      // Jadwal usulan: dibagi merata dari 2 hari ke depan sampai ~3 minggu, sesuai jumlah langkah.
+      const n = res.subtasks.length;
+      setList(res.subtasks.map((s, i) => ({ title: s.title, label: res.suggestedLabel || 'Manajemen', days: n > 1 ? Math.round(2 + (i * 19) / (n - 1)) : 7 })));
+      setSource({ kind: res.source, model: res.model });
+    } catch (e) {
+      setSource(null);
+      setErr(mode === 'server' ? errMsg(e) : 'Asisten hanya tersedia setelah masuk dengan akun.');
     } finally {
       setLoading(false);
     }
@@ -185,56 +244,85 @@ const AI: React.FC = () => {
     const pid = projectId || projects[0]?.id;
     if (!pid) return;
     list.forEach((t) => createTask({ projectId: pid, title: t.title, label: t.label, dueDate: relDay(t.days), status: 'todo' }));
-    notify('Tugas dari AI ditambahkan', `${list.length} tugas masuk ke kolom Ide.`, 'success');
-    setList([]); setIdea(''); close();
+    notify('Tugas ditambahkan', `${list.length} tugas masuk ke kolom Ide.`, 'success');
+    setList([]); setIdea(''); setSource(null); close();
   };
+  const aiOn = integrations?.ai.configured === true;
   return (
     <Modal open={modal === 'ai'} onClose={close} title="Asisten AI" wide footer={list.length ? <><button type="button" className="btn btn-outline" onClick={() => setList([])}>Ulangi</button><button type="button" className="btn btn-primary" onClick={add}>Tambahkan {list.length} tugas</button></> : undefined}>
       <div className="flex flex-col gap-4">
-        <p className="m-0 text-sm text-arang-muted">Tulis ide, asisten memecahnya jadi daftar tugas. Mode demo: hasil dibuat dari template lokal, belum memakai model AI sungguhan.</p>
-        <Field label="Ide kamu" htmlFor="ai-i"><textarea id="ai-i" className="input min-h-[80px]" placeholder="Contoh: landing page promo akhir tahun" value={idea} onChange={(e) => setIdea(e.target.value)} /></Field>
-        <Field label="Masukkan ke proyek" htmlFor="ai-p"><select id="ai-p" className="input" value={projectId || projects[0]?.id} onChange={(e) => setProjectId(e.target.value)}>{projects.map((p) => <option key={p.id} value={p.id}>{p.shortName}</option>)}</select></Field>
-        <button type="button" className="btn btn-kunyit self-start" disabled={!idea.trim() || loading} onClick={gen}><Sparkles size={15} />{loading ? 'Menganalisis...' : 'Pecah jadi tugas (AI)'}</button>
-        {list.length > 0 && <ol className="m-0 flex list-none flex-col gap-2 p-0">{list.map((t, i) => <li key={i} className="flex items-center justify-between gap-3 rounded-[10px] border border-line px-3.5 py-2.5 text-sm"><span className="font-semibold">{t.title}</span><span className="shrink-0 text-xs text-arang-muted">{t.label} · +{t.days} hari</span></li>)}</ol>}
+        <p className="m-0 text-sm text-arang-muted">
+          Tulis ide, lalu pecah jadi daftar tugas.{' '}
+          {mode !== 'server' ? 'Perlu masuk dengan akun.' : integrations === null ? '' : aiOn ? `Dihasilkan oleh model ${integrations.ai.model}.` : 'AI belum dikonfigurasi di server, jadi hasilnya dari template kata kunci (bukan AI).'}
+        </p>
+        <Field label="Ide kamu" htmlFor="ai-i"><textarea id="ai-i" className="input min-h-[80px]" maxLength={200} placeholder="Contoh: landing page promo akhir tahun" value={idea} onChange={(e) => setIdea(e.target.value)} /></Field>
+        <Field label="Masukkan ke proyek" htmlFor="ai-p"><select id="ai-p" className="input" value={projectId || projects[0]?.id} onChange={(e) => setProjectId(e.target.value)} disabled={!projects.length}>{projects.length ? projects.map((p) => <option key={p.id} value={p.id}>{p.shortName}</option>) : <option>Belum ada proyek</option>}</select></Field>
+        <button type="button" className="btn btn-kunyit self-start" disabled={!idea.trim() || loading || !projects.length} onClick={gen}><Sparkles size={15} />{loading ? 'Menganalisis...' : aiOn ? 'Pecah jadi tugas (AI)' : 'Pecah jadi tugas'}</button>
+        {err && <span role="alert" className="text-sm font-semibold" style={{ color: '#B42318' }}>{err}</span>}
+        {source && <Pill bg={source.kind === 'ai' ? '#E3F3F0' : '#FDF3DC'} fg={source.kind === 'ai' ? '#0B5F54' : '#6B4A00'} className="self-start font-bold">{source.kind === 'ai' ? `Dihasilkan AI · ${source.model}` : 'Template kata kunci, bukan AI'}</Pill>}
+        {list.length > 0 && <ol className="m-0 flex list-none flex-col gap-2 p-0">{list.map((t, i) => <li key={i} className="flex items-center justify-between gap-3 rounded-[10px] border border-line px-3.5 py-2.5 text-sm"><span className="font-semibold">{t.title}</span><span className="shrink-0 text-xs text-arang-muted">{t.label} · tenggat +{t.days} hari</span></li>)}</ol>}
       </div>
     </Modal>
   );
 };
 
 const WhatsApp: React.FC = () => {
-  const { modal, setModal, workspace, updateWorkspace, notify, canUseModule } = useApp();
-  const [num, setNum] = useState(workspace.whatsappNumber ?? '');
-  const [sendingTest, setSendingTest] = useState(false);
-  const ok = canUseModule('integrations');
+  const { modal, setModal, notify, canManage, mode, integrations, refreshIntegrations } = useApp();
+  const [to, setTo] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [result, setResult] = useState('');
   const close = () => setModal(null);
+  const wa = integrations?.whatsapp;
+  const open = modal === 'wa';
 
-  const testMessage = async () => {
-    if (!num) return;
-    setSendingTest(true);
+  useEffect(() => { if (open) void refreshIntegrations(); }, [open, refreshIntegrations]);
+
+  const sendTest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setErr('');
+    setResult('');
     try {
-      await api.sendWhatsApp({
-        phone: num,
-        message: `Halo! Ini pesan uji coba dari sistem Rampung. Integrasi WhatsApp berhasil terhubung.`,
-      });
-      notify('WhatsApp terkirim', `Pesan uji coba terkirim ke ${num}`, 'wa');
-    } catch (e: any) {
-      notify('Gagal kirim pesan', e?.message || 'Pastikan backend berjalan.');
+      const r = await api.sendWhatsApp({ phone: to, message: 'Pesan uji dari Rampung: integrasi WhatsApp Anda tersambung.' });
+      setResult(`Diterima WhatsApp untuk ${r.to} (ID ${r.messageId}). Penerima harus pernah menghubungi nomor bisnis dalam 24 jam terakhir agar pesan teks bebas sampai.`);
+      notify('Diterima WhatsApp', `Pesan uji untuk ${r.to}.`, 'wa');
+    } catch (ex) {
+      setErr(errMsg(ex));
     } finally {
-      setSendingTest(false);
+      setBusy(false);
     }
   };
 
   return (
-    <Modal open={modal === 'wa'} onClose={close} title="Notifikasi WhatsApp" footer={<><button type="button" className="btn btn-outline" onClick={close}>Tutup</button>{workspace.whatsappConnected ? <><button type="button" className="btn btn-primary" disabled={sendingTest} onClick={testMessage}>{sendingTest ? 'Mengirim...' : 'Uji Coba Pesan'}</button><button type="button" className="btn btn-outline" onClick={() => { updateWorkspace({ whatsappConnected: false }); notify('WhatsApp diputus'); }}>Putuskan</button></> : <button type="button" className="btn btn-primary" disabled={!ok || num.replace(/\D/g, '').length < 9} onClick={() => { updateWorkspace({ whatsappConnected: true, whatsappNumber: num }); testMessage(); notify('WhatsApp terhubung', 'Gateway WhatsApp aktif.', 'wa'); close(); }}>Hubungkan</button>}</>}>
+    <Modal open={open} onClose={close} title="WhatsApp" footer={<button type="button" className="btn btn-outline" onClick={close}>Tutup</button>}>
       <div className="flex flex-col gap-4">
-        <p className="m-0 text-sm text-arang-body">Kirim pengingat tenggat, @mention, dan invoice langsung ke WhatsApp pengguna melalui Rampung WA Gateway.</p>
-        {!ok && <div className="rounded-xl bg-kunyit-soft p-3 text-sm" style={{ color: '#6B4A00' }}>Integrasi WhatsApp tersedia di paket Bisnis. <button type="button" className="cursor-pointer border-0 bg-transparent p-0 font-bold underline" onClick={() => setModal('pricing')}>Lihat paket</button></div>}
-        <Field label="Nomor WhatsApp Business" htmlFor="wa-n"><input id="wa-n" className="input" placeholder="0812xxxxxxxx" value={num} onChange={(e) => setNum(e.target.value)} disabled={workspace.whatsappConnected} /></Field>
-        {workspace.whatsappConnected && (
-          <div className="flex flex-col gap-2">
-            <Pill bg="#E3F3F0" fg="#0B5F54" className="self-start font-bold">Terhubung · {workspace.whatsappNumber}</Pill>
-            <span className="text-xs text-arang-muted">Gateway aktif di server Node.js. Anda dapat mengirim pesan uji coba sekarang.</span>
-          </div>
+        {mode !== 'server' ? (
+          <p className="m-0 text-sm text-arang-body">WhatsApp hanya tersedia setelah masuk dengan akun.</p>
+        ) : !wa ? (
+          <p className="m-0 text-sm text-arang-muted" role="status">Memeriksa status server…</p>
+        ) : !wa.configured ? (
+          <>
+            <Pill bg="#ECEEEA" fg="#3D4750" className="self-start font-bold">Belum dikonfigurasi</Pill>
+            <p className="m-0 text-sm leading-relaxed text-arang-body">Server belum terhubung ke WhatsApp Business Cloud API (Meta). Isi dua variabel ini di <code>backend-node/.env</code>, lalu mulai ulang backend:</p>
+            <code className="block rounded-lg bg-canvas p-3 text-xs">WHATSAPP_TOKEN=...{'\n'}WHATSAPP_PHONE_NUMBER_ID=...</code>
+          </>
+        ) : (
+          <>
+            {wa.reachable === false ? <Pill bg="#FDF3DC" fg="#6B4A00" className="self-start font-bold">Dikonfigurasi, tetapi Meta tidak terjangkau</Pill> : <Pill bg="#E3F3F0" fg="#0B5F54" className="self-start font-bold">Terhubung{wa.phoneNumber ? ` · ${wa.phoneNumber}` : ''}{wa.accountName ? ` · ${wa.accountName}` : ''}</Pill>}
+            {canManage ? (
+              <form onSubmit={sendTest} className="flex flex-col gap-3">
+                <Field label="Kirim pesan uji ke nomor" htmlFor="wa-n" hint="Pesan sungguhan dikirim lewat nomor bisnis Anda.">
+                  <input id="wa-n" className="input" inputMode="tel" placeholder="0812xxxxxxxx" value={to} onChange={(e) => setTo(e.target.value)} />
+                </Field>
+                <button type="submit" className="btn btn-primary self-start" disabled={busy || !to.trim()}>{busy ? 'Mengirim...' : 'Kirim pesan uji'}</button>
+              </form>
+            ) : (
+              <p className="m-0 text-sm text-arang-muted">Hanya pemilik atau admin yang dapat mengirim pesan.</p>
+            )}
+            {err && <span role="alert" className="text-sm font-semibold" style={{ color: '#B42318' }}>{err}</span>}
+            {result && <span role="status" className="text-sm" style={{ color: '#0B5F54' }}>{result}</span>}
+          </>
         )}
       </div>
     </Modal>

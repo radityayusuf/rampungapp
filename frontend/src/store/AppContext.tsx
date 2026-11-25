@@ -2,16 +2,17 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import confetti from 'canvas-confetti';
 import type {
   Activity, Attendance, AutomationRule, Client, Comment, Deal, DealStage, Expense, Invoice, LeaveRequest,
-  ModuleKey, Notification, Plan, Project, Space, Task, TaskStatus, TimeEntry, User, Workspace,
+  ModuleKey, Notification, Project, Space, Task, TaskStatus, TimeEntry, User, Workspace,
 } from '../types';
-import * as seed from '../data/seed';
-import { addDays, fmtClock, randomToken, relDay, todayISO, uid } from '../lib/format';
+import { getPlanCatalog } from '../lib/plans';
+import { addDays, buildTaskKeys, fmtClock, nextTaskNum, relDay, todayISO, uid, errMsg } from '../lib/format';
 import { TEMPLATES } from '../lib/templates';
 import { PLAN_RANK, STATUS } from '../lib/meta';
 import { ApiError, api, clearToken, getToken, setToken } from '../lib/api';
-import type { ApiUser, Change, PullResult } from '../lib/api';
+import type { ApiUser, Change, IntegrationStatus, PullResult } from '../lib/api';
 
-const KEY = 'rampung_v2';
+/** Kunci penyimpanan mode lokal lama; dibersihkan saat aplikasi dimuat. */
+const LEGACY_LOCAL_KEY = 'rampung_v2';
 
 interface Data {
   workspace: Workspace;
@@ -33,25 +34,19 @@ interface Data {
   loggedIn: boolean;
 }
 
+/** Keadaan sebelum masuk: kosong. Semua data berasal dari server setelah login (tidak ada data contoh). */
 const initial = (): Data => ({
-  workspace: seed.seedWorkspace,
-  members: seed.seedUsers,
-  spaces: seed.seedSpaces,
-  projects: seed.seedProjects,
-  tasks: seed.seedTasks,
-  comments: seed.seedComments,
-  activities: seed.seedActivities,
-  notifications: seed.seedNotifications,
-  timeEntries: seed.seedTimeEntries,
-  clients: seed.seedClients,
-  deals: seed.seedDeals,
-  invoices: seed.seedInvoices,
-  expenses: seed.seedExpenses,
-  attendances: seed.seedAttendances,
-  leaves: seed.seedLeaves,
-  automations: seed.seedAutomations,
+  workspace: {
+    id: 'ws-main', name: '', plan: 'gratis', planUntil: null, hourlyRate: 0, whatsappConnected: false, whatsappNumber: '',
+    storageUsedMB: 0, storageMaxMB: 0,
+    enabledModules: { timeTracking: false, crm: false, finance: false, sdm: false, integrations: false, aiAssistant: false },
+  },
+  members: [], spaces: [], projects: [], tasks: [], comments: [], activities: [], notifications: [], timeEntries: [],
+  clients: [], deals: [], invoices: [], expenses: [], attendances: [], leaves: [], automations: [],
   loggedIn: false,
 });
+
+const GUEST: User = { id: '', name: 'Tamu', shortName: 'Tamu', initials: '?', color: '#8A949B', email: '', role: 'member' };
 
 export type SyncStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -101,19 +96,20 @@ const emptyData = (acc: ApiUser): Data => {
     workspace: {
       id: 'ws-main',
       name: acc.workspace_name,
-      plan: 'bisnis',
-      hourlyRate: 150000,
+      plan: 'gratis',
+      planUntil: null,
+      hourlyRate: 0,
       whatsappConnected: false,
       whatsappNumber: '',
       storageUsedMB: 0,
-      storageMaxMB: 10240,
+      storageMaxMB: 1024,
       enabledModules: {
-        crm: true,
-        finance: true,
-        timeTracking: true,
-        sdm: true,
-        integrations: true,
-        aiAssistant: true,
+        crm: false,
+        finance: false,
+        timeTracking: false,
+        sdm: false,
+        integrations: false,
+        aiAssistant: false,
       },
     },
     members: [me],
@@ -135,25 +131,6 @@ const emptyData = (acc: ApiUser): Data => {
   };
 };
 
-/** Data contoh milik akun nyata (hanya dipakai jika user meminta reset ke demo) */
-const adoptSeed = (d: Data, acc: ApiUser): Data => {
-  const myId = `u${acc.id}`;
-  const out = JSON.parse(JSON.stringify(d).split(seed.CURRENT_USER_ID).join(myId)) as Data;
-  out.projects = out.projects.map((p) => (p.clientPortalEnabled && !p.portalToken ? { ...p, portalToken: randomToken() } : p));
-  out.members = [memberFromAccount(acc, 0), ...seed.seedUsers.filter((u) => u.id !== seed.CURRENT_USER_ID).map((u) => ({ ...u, demo: true }))];
-  return out;
-};
-
-const load = (): Data => {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) return { ...initial(), ...JSON.parse(raw) };
-  } catch {
-    /* abaikan: pakai data awal */
-  }
-  return initial();
-};
-
 export interface Toast {
   id: number;
   title: string;
@@ -173,6 +150,12 @@ interface Ctx extends Data {
   updateMember: (id: string, patch: Partial<User>) => void;
   removeMemberRecord: (id: string) => void;
   renameMe: (name: string) => Promise<void>;
+  updateMyPhone: (phone: string) => void;
+  /** Status integrasi yang BENAR-BENAR aktif di server (null di mode lokal / sebelum dimuat). */
+  integrations: IntegrationStatus | null;
+  refreshIntegrations: () => Promise<void>;
+  /** Tarik data terbaru dari server sekarang juga (mis. setelah webhook pembayaran). */
+  refreshNow: () => void;
   user: (id: string) => User;
   toasts: Toast[];
   dismissToast: (id: number) => void;
@@ -182,17 +165,17 @@ interface Ctx extends Data {
   mode: 'local' | 'server';
   booting: boolean;
   syncStatus: SyncStatus;
-  login: () => void;
-  loginServer: (email: string, password: string) => Promise<void>;
-  loginGoogle: (params: { credential?: string; email?: string; name?: string; invite?: string }) => Promise<void>;
-  registerServer: (name: string, email: string, password: string, invite?: string) => Promise<void>;
+  loginServer: (email: string, password: string) => Promise<ApiUser>;
+  loginGoogle: (params: { credential?: string; email?: string; name?: string; invite?: string }) => Promise<ApiUser>;
+  registerServer: (name: string, email: string, password: string, invite?: string) => Promise<ApiUser>;
   resetPassword: (email: string, token: string, password: string) => Promise<void>;
   canManage: boolean;
   logout: () => void;
-  resetDemo: () => void;
 
   // task
   createTask: (t: Partial<Task> & { projectId: string; title: string }) => Task;
+  /** Kunci tiket berurutan, mis. RTK-12. */
+  taskKey: (taskId: string) => string;
   updateTask: (id: string, patch: Partial<Task>) => void;
   deleteTask: (id: string) => void;
   moveTask: (id: string, status: TaskStatus) => void;
@@ -205,9 +188,10 @@ interface Ctx extends Data {
   uploadAttachment: (taskId: string, file: File) => Promise<void>;
 
   // proyek
-  createProject: (p: Partial<Project> & { name: string }, templateKey?: string) => Project;
+  /** null bila ditolak (mis. batas proyek aktif paket Gratis). */
+  createProject: (p: Partial<Project> & { name: string }, templateKey?: string) => Project | null;
   updateProject: (id: string, patch: Partial<Project>) => void;
-  createSpace: (name: string) => void;
+  createSpace: (name: string) => string;
 
   // timer
   timer: ActiveTimer | null;
@@ -218,7 +202,6 @@ interface Ctx extends Data {
 
   // modul & paket
   toggleModule: (k: ModuleKey) => boolean;
-  upgradePlan: (p: Plan) => void;
   updateWorkspace: (patch: Partial<Workspace>) => void;
   canUseModule: (k: ModuleKey) => boolean;
 
@@ -232,7 +215,8 @@ interface Ctx extends Data {
 
   // keuangan
   createInvoice: (i: Omit<Invoice, 'id' | 'number' | 'status'>) => Invoice;
-  payInvoice: (id: string) => void;
+  /** Tandai lunas SECARA MANUAL (transfer/tunai). Pembayaran QRIS dilunasi oleh server lewat Midtrans, bukan lewat fungsi ini. */
+  markInvoicePaid: (id: string) => void;
   addExpense: (e: Omit<Expense, 'id'>) => void;
 
   // sdm
@@ -270,6 +254,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [mode, setMode] = useState<'local' | 'server'>(() => (getToken() ? 'server' : 'local'));
   const [booting, setBooting] = useState(() => !!getToken());
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
+  const syncStatusRef = useRef<SyncStatus>('idle');
+  syncStatusRef.current = syncStatus;
+  const [integrations, setIntegrations] = useState<IntegrationStatus | null>(null);
+  const checkRef = useRef<(() => Promise<void>) | null>(null);
+  const refreshNow = useCallback(() => { void checkRef.current?.(); }, []);
+  const refreshIntegrations = useCallback(async () => {
+    if (mode !== 'server') { setIntegrations(null); return; }
+    try { setIntegrations(await api.integrationStatus()); } catch { /* biarkan status terakhir */ }
+  }, [mode]);
   const [syncTick, setSyncTick] = useState(0);
   const synced = useRef<Map<string, string> | null>(null);
   const pushing = useRef(false);
@@ -277,7 +270,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [account, setAccount] = useState<ApiUser | null>(null);
   const accountRef = useRef<ApiUser | null>(null);
   accountRef.current = account;
-  const [data, setData] = useState<Data>(() => (getToken() ? initial() : load()));
+  const [data, setData] = useState<Data>(initial);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [timer, setTimer] = useState<ActiveTimer | null>(null);
   const [now, setNow] = useState(Date.now());
@@ -285,15 +278,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [modal, setModal] = useState<Ctx['modal']>(null);
   const toastSeq = useRef(1);
 
-  // Mode lokal: simpan di browser. Mode server: sumber kebenaran ada di server.
+  // Data hanya hidup di server; sisa data "mode lokal" versi lama di browser dibersihkan.
   useEffect(() => {
-    if (mode !== 'local') return;
-    try {
-      localStorage.setItem(KEY, JSON.stringify(data));
-    } catch {
-      /* penyimpanan penuh/dinonaktifkan */
-    }
-  }, [data, mode]);
+    try { localStorage.removeItem(LEGACY_LOCAL_KEY); } catch { /* penyimpanan dinonaktifkan */ }
+  }, []);
 
   useEffect(() => {
     if (!timer) return;
@@ -310,9 +298,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4500);
   }, []);
 
-  const meId = account ? `u${account.id}` : seed.CURRENT_USER_ID;
+  const meId = account ? `u${account.id}` : '';
   const me: User = useMemo(() => {
-    const m = data.members.find((u) => u.id === meId) ?? (account ? memberFromAccount(account, data.members.length) : seed.seedUsers[0]);
+    const m = data.members.find((u) => u.id === meId) ?? (account ? memberFromAccount(account, data.members.length) : GUEST);
     return account ? { ...m, role: account.role } : m;
   }, [data.members, meId, account]);
   const user = useCallback(
@@ -320,7 +308,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [data.members],
   );
   // Pemilik/admin boleh mengelola paket, modul, otomasi, keuangan, CRM, dan persetujuan cuti (sama dengan aturan server).
-  const canManage = me.role === 'owner' || me.role === 'admin';
+  // Sama dengan server: superadmin berhak penuh di workspace-nya sendiri.
+  const canManage = me.role === 'owner' || me.role === 'admin' || me.role === 'superadmin';
   const manage = () => {
     if (canManage) return true;
     notify('Hanya pemilik atau admin', 'Peran Anda (anggota) tidak bisa melakukan ini.');
@@ -351,7 +340,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     synced.current = null;
     setMode('local');
     setAccount(null);
-    setData({ ...load(), loggedIn: false });
+    setData(initial());
     if (msg) notify('Sesi berakhir', msg);
   }, [notify]);
 
@@ -378,9 +367,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Peringatkan sebelum menutup/memuat ulang bila masih ada perubahan yang belum sampai ke server.
+  useEffect(() => {
+    if (mode !== 'server') return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (syncStatusRef.current === 'saving' || syncStatusRef.current === 'error') {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [mode]);
+
   // Kirim perubahan ke server (debounce), hanya record yang berubah.
   useEffect(() => {
     if (mode !== 'server' || !synced.current || !data.loggedIn || pushing.current) return;
+    // Tandai "menyimpan" SEKARANG, bukan setelah jeda debounce, agar lencana status tidak berbohong
+    // dan peringatan sebelum menutup halaman bekerja selama perubahan belum sampai ke server.
+    if (!sameSnapshot(snapshot(data), synced.current)) setSyncStatus((s) => (s === 'error' ? s : 'saving'));
     const h = setTimeout(async () => {
       const next = snapshot(data);
       const prev = synced.current;
@@ -411,7 +416,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }, 700);
     return () => clearTimeout(h);
-  }, [data, mode, syncTick, forceLogout]);
+  }, [data, mode, syncTick, forceLogout, applyPull, notify]);
 
   // Tarik pembaruan dari anggota lain (cek revisi tiap 8 detik, tarik hanya jika berubah & tidak ada perubahan lokal tertunda).
   const dataRef = useRef(data);
@@ -432,11 +437,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (e instanceof ApiError && e.status === 401) forceLogout('Silakan masuk lagi.');
       }
     };
+    checkRef.current = check;
     const i = setInterval(check, 8000);
     const onVis = () => { if (!document.hidden) check(); };
     document.addEventListener('visibilitychange', onVis);
-    return () => { clearInterval(i); document.removeEventListener('visibilitychange', onVis); };
+    return () => { clearInterval(i); document.removeEventListener('visibilitychange', onVis); checkRef.current = null; };
   }, [mode, data.loggedIn, applyPull, notify, forceLogout]);
+
+  useEffect(() => {
+    if (mode === 'server' && data.loggedIn) void refreshIntegrations();
+    else setIntegrations(null);
+  }, [mode, data.loggedIn, refreshIntegrations]);
 
   const enterServer = useCallback(async (call: () => Promise<{ token: string; user: ApiUser }>) => {
     const r = await call();
@@ -449,6 +460,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setMode('local');
       throw e;
     }
+    return r.user;
   }, [applyPull]);
 
   const log = (d: Data, text: string, taskId?: string, projectId?: string): Activity[] => [
@@ -465,10 +477,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
 
   // ---------- Task ----------
+  const keys = useMemo(() => buildTaskKeys(data.tasks, data.projects), [data.tasks, data.projects]);
+  const taskKey = useCallback((id: string) => keys.get(id) ?? 'TGS-?', [keys]);
+
   const createTask: Ctx['createTask'] = (t) => {
     const nowIso = new Date().toISOString();
     const full: Task = {
-      id: uid('t'), description: '', status: 'todo', priority: 'medium', assigneeId: me.id, watcherIds: [], label: 'Manajemen',
+      id: uid('t'), num: nextTaskNum(data.tasks, t.projectId), description: '', status: 'todo', priority: 'medium', assigneeId: me.id, watcherIds: [], label: 'Manajemen',
       startDate: todayISO(), dueDate: relDay(3), loggedSeconds: 0, subtasks: [], dependencies: [], attachments: [],
       createdBy: me.id, createdAt: nowIso, updatedAt: nowIso, ...t,
     };
@@ -490,6 +505,55 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     notify('Tugas dihapus');
   };
 
+  const bumpRun = (ruleId: string) =>
+    patch((d) => ({ automations: d.automations.map((a) => (a.id === ruleId ? { ...a, runCount: a.runCount + 1 } : a)) }));
+
+  /** Menjalankan satu aturan otomasi dan melaporkan hasilnya apa adanya. runCount hanya naik jika aksinya benar-benar terjadi. */
+  const runAutomation = async (r: AutomationRule, task: Task, status: TaskStatus) => {
+    const project = data.projects.find((p) => p.id === task.projectId);
+    const label = STATUS[status].label;
+    const skip = (why: string) => notify(`Otomasi dilewati: ${r.name}`, why);
+
+    if (r.action === 'set_priority_high') {
+      patch((d) => ({ tasks: d.tasks.map((t) => (t.id === task.id ? { ...t, priority: 'high' as const } : t)) }));
+      notify(`Otomasi berjalan: ${r.name}`, `Prioritas "${task.title}" dinaikkan ke Tinggi.`);
+      if (canManage) bumpRun(r.id);
+      return;
+    }
+    if (r.action === 'notify_assignee') {
+      if (task.assigneeId === me.id) return skip('Anda sendiri penanggung jawabnya, jadi tidak ada yang perlu diberi tahu.');
+      notify(`Otomasi berjalan: ${r.name}`, `${user(task.assigneeId).shortName} diberi tahu lewat inbox.`);
+      if (canManage) bumpRun(r.id);
+      return;
+    }
+
+    // notify_whatsapp (ke penanggung jawab) dan notify_client (ke klien proyek): kirim sungguhan atau lewati dengan alasan jelas.
+    if (!canManage) return skip('Pesan WhatsApp hanya dikirim bila dipicu oleh pemilik atau admin.');
+    if (mode !== 'server' || !integrations?.whatsapp.configured) return skip('WhatsApp belum dikonfigurasi di server.');
+
+    let phone: string | undefined;
+    let text: string;
+    if (r.action === 'notify_client') {
+      const c = data.clients.find((x) => x.id === project?.clientId);
+      if (!c) return skip('Proyek ini belum punya klien.');
+      phone = c.phone;
+      if (!phone) return skip(`Klien ${c.company} belum punya nomor telepon.`);
+      text = `Halo ${c.contact || c.company}, tugas "${task.title}" pada proyek ${project?.name ?? ''} kini berstatus ${label}.`;
+    } else {
+      const a = user(task.assigneeId);
+      phone = a.phone;
+      if (!phone) return skip(`${a.shortName} belum mengisi nomor WhatsApp (Pengaturan → Profil).`);
+      text = `Rampung: tugas "${task.title}"${project ? ` (${project.shortName})` : ''} kini berstatus ${label}.`;
+    }
+    try {
+      const res = await api.sendWhatsApp({ phone, message: text });
+      notify(`Otomasi berjalan: ${r.name}`, `Pesan diterima WhatsApp untuk ${res.to}.`, 'wa');
+      bumpRun(r.id);
+    } catch (e) {
+      notify(`Otomasi gagal: ${r.name}`, errMsg(e));
+    }
+  };
+
   const moveTask: Ctx['moveTask'] = (id, status) => {
     const cur = data.tasks.find((t) => t.id === id);
     if (!cur || cur.status === status) return;
@@ -505,7 +569,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     patch((d) => ({
       tasks: d.tasks.map((t) => (t.id === id ? { ...t, status, updatedAt: nowIso, completedAt: status === 'done' ? nowIso : undefined } : t)),
       activities: log(d, `memindahkan "${cur.title}" ke ${STATUS[status].label}`, id, cur.projectId),
-      automations: canManage ? d.automations.map((a) => (rules.some((r) => r.id === a.id) ? { ...a, runCount: a.runCount + 1 } : a)) : d.automations,
       notifications: cur.assigneeId !== me.id
         ? [{ id: uid('n'), userId: cur.assigneeId, actorId: me.id, kind: 'status' as const, text: `memindahkan "${cur.title}" ke ${STATUS[status].label}`, taskId: id, read: false, createdAt: nowIso }, ...d.notifications]
         : d.notifications,
@@ -514,10 +577,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       confetti({ particleCount: 90, spread: 70, origin: { y: 0.65 }, colors: ['#0F9D8A', '#F2B33D', '#0B7A6B', '#1D5FA8'] });
       notify('Rampung!', `"${cur.title}" selesai tuntas.`, 'success');
     }
-    rules.forEach((r) => {
-      const wa = r.action === 'notify_whatsapp' || r.action === 'notify_client';
-      notify(`Otomasi berjalan: ${r.name}`, wa ? 'Pesan WhatsApp terkirim (simulasi).' : `${user(cur.assigneeId).shortName} diberi tahu.`, wa ? 'wa' : 'info');
-    });
+    rules.forEach((r) => { void runAutomation(r, cur, status); });
   };
 
   const toggleSubtask: Ctx['toggleSubtask'] = (taskId, subId) =>
@@ -574,8 +634,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addAttachment(taskId, file.name, file.size, res.url);
         notify('Berkas terunggah', file.name, 'success');
         return;
-      } catch (err: any) {
-        notify('Gagal mengunggah', err?.message || 'Gagal menyimpan ke server');
+      } catch (err) {
+        notify('Gagal mengunggah', errMsg(err, 'Gagal menyimpan ke server'));
       }
     }
     addAttachment(taskId, file.name, file.size);
@@ -583,10 +643,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // ---------- Proyek ----------
   const createProject: Ctx['createProject'] = (p, templateKey) => {
+    // Sama dengan batas di server (diatur Superadmin); server tetap menjadi penentu akhir.
+    const maxProjects = getPlanCatalog().plans.find((x) => x.key === data.workspace.plan)?.limits.activeProjects ?? null;
+    if (maxProjects !== null && data.projects.filter((x) => x.status !== 'completed').length >= maxProjects) {
+      notify('Batas paket tercapai', `Paket Anda maksimal ${maxProjects} proyek aktif. Selesaikan proyek lain atau tingkatkan paket.`);
+      setModal('pricing');
+      return null;
+    }
+    // Proyek selalu punya space yang benar-benar ada; bila workspace belum punya space, dibuatkan "Umum".
+    // Ditentukan di dalam patch agar space yang baru dibuat pada klik yang sama ikut terhitung.
+    const defaultSpace = { id: uid('sp'), name: 'Umum', description: 'Ruang kerja utama' };
     const full: Project = {
-      id: uid('p'), spaceId: data.spaces[0].id, shortName: p.name, description: '', budget: 0, spent: 0,
+      id: uid('p'), shortName: p.name, description: '', budget: 0, spent: 0,
       startDate: todayISO(), dueDate: relDay(30), status: 'active', docsContent: `# ${p.name}\n\nCatatan dan dokumentasi proyek.`,
       memberIds: [me.id], clientPortalEnabled: false, ...p,
+      spaceId: p.spaceId || '',
     };
     const tpl = TEMPLATES.find((x) => x.key === templateKey);
     const nowIso = new Date().toISOString();
@@ -598,7 +669,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
     // Rantai dependensi sederhana: tiap tugas non-milestone menunggu tugas sebelumnya yang berakhir lebih dulu.
     fromTemplate.forEach((t, i) => { if (i > 0 && !t.isMilestone) t.dependencies = [fromTemplate[i - 1].id]; });
-    patch((d) => ({ projects: [...d.projects, full], tasks: [...fromTemplate, ...d.tasks], activities: log(d, `membuat proyek "${full.name}"`, undefined, full.id) }));
+    patch((d) => {
+      const spaceId = d.spaces.some((x) => x.id === full.spaceId) ? full.spaceId : d.spaces[0]?.id ?? defaultSpace.id;
+      return { spaces: d.spaces.length ? d.spaces : [defaultSpace], projects: [...d.projects, { ...full, spaceId }], tasks: [...fromTemplate, ...d.tasks], activities: log(d, `membuat proyek "${full.name}"`, undefined, full.id) };
+    });
     notify('Proyek dibuat', `"${full.name}" siap dikerjakan.`, 'success');
     return full;
   };
@@ -606,8 +680,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateProject: Ctx['updateProject'] = (id, p) => patch((d) => ({ projects: d.projects.map((x) => (x.id === id ? { ...x, ...p } : x)) }));
 
   const createSpace: Ctx['createSpace'] = (name) => {
-    patch((d) => ({ spaces: [...d.spaces, { id: uid('sp'), name, description: '' }] }));
+    const id = uid('sp');
+    patch((d) => ({ spaces: [...d.spaces, { id, name, description: '' }] }));
     notify('Space ditambahkan', name, 'success');
+    return id;
   };
 
   // ---------- Timer ----------
@@ -660,23 +736,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return true;
   };
 
-  const upgradePlan: Ctx['upgradePlan'] = (plan) => {
-    if (!manage()) return;
-    patch((d) => {
-      const modules = { ...d.workspace.enabledModules };
-      if (plan === 'gratis') (Object.keys(modules) as ModuleKey[]).forEach((k) => (modules[k] = false));
-      if (plan === 'pro') {
-        let kept = false;
-        (Object.keys(modules) as ModuleKey[]).forEach((k) => {
-          if (modules[k] && !kept && k !== 'integrations' && k !== 'aiAssistant') kept = true;
-          else modules[k] = false;
-        });
-      }
-      return { workspace: { ...d.workspace, plan, enabledModules: modules } };
-    });
-    if (PLAN_RANK[plan] > PLAN_RANK[data.workspace.plan]) confetti({ particleCount: 100, spread: 80, origin: { y: 0.5 } });
-    notify('Paket diperbarui', `Workspace sekarang di paket ${plan.charAt(0).toUpperCase() + plan.slice(1)}.`, 'success');
-  };
 
   const updateWorkspace: Ctx['updateWorkspace'] = (p) => manage() && patch((d) => ({ workspace: { ...d.workspace, ...p } }));
 
@@ -732,18 +791,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return full;
   };
 
-  const payInvoice: Ctx['payInvoice'] = async (id) => {
+  const markInvoicePaid: Ctx['markInvoicePaid'] = (id) => {
     if (!manage()) return;
-    if (mode === 'server') {
-      try {
-        await api.verifyQris({ invoiceId: id });
-      } catch {
-        // Abaikan jika offline, simpan lokal
-      }
-    }
-    patch((d) => ({ invoices: d.invoices.map((x) => (x.id === id ? { ...x, status: 'paid', paidAt: new Date().toISOString() } : x)) }));
-    confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } });
-    notify('Pembayaran QRIS diterima', 'Invoice berhasil diverifikasi lunas.', 'success');
+    const inv = data.invoices.find((x) => x.id === id);
+    if (!inv || inv.status === 'paid') return;
+    patch((d) => ({ invoices: d.invoices.map((x) => (x.id === id ? { ...x, status: 'paid', paidAt: new Date().toISOString(), paymentMethod: 'manual' } : x)) }));
+    notify('Invoice ditandai lunas', `${inv.number} dikonfirmasi manual.`, 'success');
   };
 
   const addExpense: Ctx['addExpense'] = (e) => {
@@ -798,14 +851,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ...data,
     users: data.members, me, account, user, toasts, dismissToast, notify,
     mode, booting, syncStatus,
-    login: () => patch(() => ({ loggedIn: true })),
     loginServer: (email, password) => enterServer(() => api.login(email, password)),
     loginGoogle: (params) => enterServer(() => api.loginGoogle(params)),
-    resetPassword: (email, token, password) => enterServer(() => api.reset(email, token, password)),
+    resetPassword: async (email, token, password) => { await enterServer(() => api.reset(email, token, password)); },
     canManage,
     registerServer: (name, email, password, invite) => enterServer(() => api.register(name, email, password, invite)),
     updateMember: (id, p) => patch((d) => ({ members: d.members.map((m) => (m.id === id ? { ...m, ...p } : m)) })),
     removeMemberRecord: (id) => patch((d) => ({ members: d.members.filter((m) => m.id !== id) })),
+    updateMyPhone: (phone) => {
+      const clean = phone.trim();
+      if (clean && !/^[0-9+\-\s()]{8,20}$/.test(clean)) { notify('Nomor tidak valid', 'Gunakan angka, mis. 0812 3456 7890.'); return; }
+      patch((d) => ({ members: d.members.map((m) => (m.id === meId ? { ...m, phone: clean || undefined } : m)) }));
+      notify(clean ? 'Nomor WhatsApp disimpan' : 'Nomor WhatsApp dihapus', undefined, 'success');
+    },
+    integrations, refreshIntegrations, refreshNow,
     renameMe: async (name) => {
       const clean = name.trim();
       if (!clean) return;
@@ -820,19 +879,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         clearToken();
         synced.current = null;
         setMode('local');
-        setData({ ...load(), loggedIn: false });
+        setData(initial());
       } else patch(() => ({ loggedIn: false }));
     },
-    resetDemo: () => {
-      const base = { ...initial(), loggedIn: true };
-      setData(account ? adoptSeed({ ...base, workspace: { ...seed.seedWorkspace, name: data.workspace.name } }, account) : base);
-      notify('Data demo dikembalikan', undefined, 'success');
-    },
-    createTask, updateTask, deleteTask, moveTask, toggleSubtask, addSubtask, deleteSubtask, addComment, addAttachment, deleteAttachment, uploadAttachment,
+    createTask, taskKey, updateTask, deleteTask, moveTask, toggleSubtask, addSubtask, deleteSubtask, addComment, addAttachment, deleteAttachment, uploadAttachment,
     createProject, updateProject, createSpace,
     timer, timerSeconds, startTimer, stopTimer, addTimeEntry,
-    toggleModule, upgradePlan, updateWorkspace, canUseModule,
-    addClient, updateClient, deleteClient, createDeal, moveDeal, deleteDeal, createInvoice, payInvoice, addExpense,
+    toggleModule, updateWorkspace, canUseModule,
+    addClient, updateClient, deleteClient, createDeal, moveDeal, deleteDeal, createInvoice, markInvoicePaid, addExpense,
     checkIn, checkOut, addLeave, decideLeave,
     addAutomation, toggleAutomation, deleteAutomation, markAllRead, markRead,
     createTaskOpen,
@@ -841,6 +895,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     modal, setModal,
   };
 
-  const memo = useMemo(() => value, [data, toasts, timer, now, createTaskOpen, modal, account]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Semua nilai yang dibaca konsumen lewat konteks harus ada di daftar ini, kalau tidak komponen tidak melihat perubahannya.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const memo = useMemo(() => value, [data, toasts, timer, now, createTaskOpen, modal, account, integrations, syncStatus, mode, booting]);
   return <AppCtx.Provider value={memo}>{children}</AppCtx.Provider>;
 };

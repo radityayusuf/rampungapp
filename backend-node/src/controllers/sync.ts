@@ -2,6 +2,8 @@ import { Response } from 'express';
 import { prisma } from '../db';
 import { AuthRequest } from '../types';
 import { broadcastSync } from '../socket';
+import { LIMITS, PLAN_LABEL } from '../services/plans';
+import { activeProjectCount, isActiveProject, planOf, stampWorkspaceRecord } from '../services/workspacePlan';
 
 export const COLLECTIONS = [
   'workspace', 'members', 'spaces', 'projects', 'tasks', 'comments', 'activities', 'notifications',
@@ -52,8 +54,13 @@ async function denied(user: any, changes: any[]): Promise<string | null> {
     }
 
     if (OWN_ONLY.includes(c) || c === 'leaves') {
-      const owner = (data && data.userId) ? data.userId : await existingOwner(BigInt(user.workspace_id), c, ch.id);
-      if (owner !== null && owner !== me) {
+      // Pemilik catatan yang SUDAH ada menentukan boleh/tidaknya; data baru tidak boleh mengklaim milik orang lain,
+      // dan tidak boleh "mencuri" catatan orang lain dengan menulis userId miliknya sendiri.
+      const existing = await existingOwner(BigInt(user.workspace_id), c, ch.id);
+      if (existing !== null && existing !== me) {
+        return 'Anggota hanya boleh mengubah catatan miliknya sendiri.';
+      }
+      if (data !== null && data.userId !== me) {
         return 'Anggota hanya boleh mengubah catatan miliknya sendiri.';
       }
       if (c === 'leaves' && data !== null && (data.status || 'pending') !== 'pending') {
@@ -99,6 +106,10 @@ export async function pull(req: AuthRequest, res: Response): Promise<void> {
     }
   }
 
+  // Paket & modul selalu dari server: nilai yang ditulis klien di catatan workspace tidak dipercaya.
+  const p = await planOf(BigInt(wsId));
+  out.workspace = out.workspace.map((w) => stampWorkspaceRecord(w, p));
+
   res.json({
     empty: count === 0,
     rev,
@@ -128,19 +139,23 @@ export async function push(req: AuthRequest, res: Response): Promise<void> {
   }
 
   const wsId = BigInt(user.workspace_id);
-  const changes = req.body.changes;
+  const changes = req.body?.changes;
 
-  if (!Array.isArray(changes) || changes.length > 2000) {
+  if (!Array.isArray(changes) || changes.length === 0 || changes.length > 2000) {
     res.status(422).json({ message: 'Perubahan tidak valid.' });
     return;
   }
 
-  // Validate format
-  for (const ch of changes) {
-    if (!ch.c || !COLLECTIONS.includes(ch.c) || !ch.id) {
-      res.status(422).json({ message: `Format perubahan salah: ${ch.c}/${ch.id}` });
-      return;
-    }
+  // Validasi bentuk: koleksi dikenal, id string 1-100 karakter, data null atau objek (bukan array/string/angka).
+  const known = COLLECTIONS as readonly string[];
+  const valid = (ch: any) =>
+    !!ch && typeof ch === 'object' && typeof ch.c === 'string' && known.includes(ch.c) &&
+    typeof ch.id === 'string' && ch.id.length > 0 && ch.id.length <= 100 &&
+    (ch.data === null || ch.data === undefined || (typeof ch.data === 'object' && !Array.isArray(ch.data)));
+  const bad = changes.find((ch) => !valid(ch));
+  if (bad !== undefined) {
+    res.status(422).json({ message: 'Format perubahan salah.' });
+    return;
   }
 
   const denial = await denied(user, changes);
@@ -149,13 +164,40 @@ export async function push(req: AuthRequest, res: Response): Promise<void> {
     return;
   }
 
+  // Paket ditentukan server: plan/planUntil/modul pada catatan workspace ditimpa sesuai paket yang dibayar.
+  const p = await planOf(wsId);
+  for (const ch of changes) {
+    if (ch.c === 'workspace' && ch.data) ch.data = stampWorkspaceRecord(ch.data, p);
+  }
+
+  // Batas proyek aktif paket (mis. Gratis: 3). Hanya menolak perubahan yang MENAMBAH proyek aktif di atas batas,
+  // sehingga workspace yang sudah melebihi batas tetap bisa mengubah/menutup proyeknya.
+  const maxProjects = LIMITS[p.plan].activeProjects;
+  if (maxProjects !== null && changes.some((ch) => ch.c === 'projects')) {
+    const map = await activeProjectCount(wsId);
+    const before = [...map.values()].filter(isActiveProject).length;
+    for (const ch of changes) {
+      if (ch.c !== 'projects') continue;
+      if (ch.data == null) map.delete(ch.id);
+      else map.set(ch.id, ch.data);
+    }
+    const after = [...map.values()].filter(isActiveProject).length;
+    if (after > maxProjects && after > before) {
+      res.status(403).json({ message: `Paket ${PLAN_LABEL[p.plan]} maksimal ${maxProjects} proyek aktif. Selesaikan proyek lain atau tingkatkan paket.` });
+      return;
+    }
+  }
+
   const now = new Date();
 
   const result = await prisma.$transaction(async (tx) => {
-    const ws = await tx.workspaces.findUnique({
+    // Kenaikan atomik: UPDATE mengunci baris workspace sampai transaksi selesai, sehingga push bersamaan
+    // berurutan dan setiap push mendapat nomor rev yang unik (tidak ada pembaruan yang terlewat oleh polling).
+    const bumped = await tx.workspaces.update({
       where: { id: wsId },
+      data: { rev: { increment: 1 } },
     });
-    const prev = ws?.rev ? Number(ws.rev) : 0;
+    const nextRev = Number(bumped.rev);
 
     for (const ch of changes) {
       if (ch.data === null || ch.data === undefined) {
@@ -192,13 +234,7 @@ export async function push(req: AuthRequest, res: Response): Promise<void> {
       }
     }
 
-    const nextRev = prev + 1;
-    await tx.workspaces.update({
-      where: { id: wsId },
-      data: { rev: BigInt(nextRev) },
-    });
-
-    return { prev, rev: nextRev };
+    return { prev: nextRev - 1, rev: nextRev };
   });
 
   // Broadcast real-time sync notification

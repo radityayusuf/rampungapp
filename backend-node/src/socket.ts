@@ -72,6 +72,11 @@ export function initSocket(server: HttpServer, allowedOrigins: string[]): Server
   return io;
 }
 
+/** Jumlah klien WebSocket yang sedang terhubung, atau null bila Socket.io belum dijalankan. */
+export function connectedClients(): number | null {
+  return io ? io.engine.clientsCount : null;
+}
+
 export function broadcastSync(workspaceId: number, data: { rev: number; senderId: number; applied: number }): void {
   if (!io) return;
   const room = `workspace_${workspaceId}`;

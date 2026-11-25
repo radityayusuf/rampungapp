@@ -55,23 +55,37 @@ export const fmtFullDay = (iso: string) => {
 
 export const isOverdue = (dueISO: string, done = false) => !done && diffDays(todayISO(), dueISO) < 0;
 
-/** Menghasilkan Jira/Trello issue key seperti SINAR-101 atau KASIR-042 */
-export const formatTaskKey = (taskId: string, projectShortName?: string) => {
-  const prefix = (projectShortName || 'RAMP')
-    .replace(/[^A-Za-z0-9]/g, '')
-    .slice(0, 5)
-    .toUpperCase() || 'TASK';
-  const digits = taskId.replace(/\D/g, '');
-  if (digits.length >= 1) {
-    return `${prefix}-${digits.padStart(2, '0')}`;
+/** Awalan kunci tiket dari nama proyek: beberapa kata → inisial ("Rebranding Toko Kopi" → RTK), satu kata → 4 huruf pertama. */
+export const projectPrefix = (name?: string): string => {
+  const words = (name ?? '').split(/[^A-Za-z0-9]+/).filter(Boolean);
+  const out = words.length >= 2 ? words.map((w) => w[0]).join('').slice(0, 4) : (words[0] ?? '').slice(0, 4);
+  return out.toUpperCase() || 'TGS';
+};
+
+/**
+ * Kunci tiket berurutan per proyek (RTK-1, RTK-2, ...), seperti Jira.
+ * Tugas baru menyimpan `num`; tugas lama tanpa `num` diberi nomor 1..n menurut waktu pembuatan,
+ * dan nomor baru selalu dilanjutkan di atas keduanya sehingga tidak pernah bentrok.
+ */
+export function buildTaskKeys(tasks: { id: string; projectId: string; num?: number; createdAt: string }[], projects: { id: string; shortName: string; name: string }[]): Map<string, string> {
+  const prefix = new Map(projects.map((p) => [p.id, projectPrefix(p.shortName?.trim().includes(' ') ? p.shortName : p.name?.trim().includes(' ') ? p.name : p.shortName || p.name)]));
+  const byProject = new Map<string, typeof tasks>();
+  for (const t of tasks) byProject.set(t.projectId, [...(byProject.get(t.projectId) ?? []), t]);
+  const out = new Map<string, string>();
+  for (const [pid, list] of byProject) {
+    const pre = prefix.get(pid) ?? 'TGS';
+    const legacy = list.filter((t) => !t.num).sort((x, y) => x.createdAt.localeCompare(y.createdAt) || x.id.localeCompare(y.id));
+    legacy.forEach((t, i) => out.set(t.id, `${pre}-${i + 1}`));
+    for (const t of list) if (t.num) out.set(t.id, `${pre}-${t.num}`);
   }
-  let hash = 0;
-  for (let i = 0; i < taskId.length; i++) {
-    hash = ((hash << 5) - hash) + taskId.charCodeAt(i);
-    hash |= 0;
-  }
-  const num = Math.abs(hash % 900) + 10;
-  return `${prefix}-${num}`;
+  return out;
+}
+
+/** Nomor tiket berikutnya untuk satu proyek. */
+export const nextTaskNum = (tasks: { projectId: string; num?: number }[], projectId: string): number => {
+  const mine = tasks.filter((t) => t.projectId === projectId);
+  const legacy = mine.filter((t) => !t.num).length;
+  return Math.max(legacy, ...mine.map((t) => t.num ?? 0), 0) + 1;
 };
 
 /** Label tenggat: "Terlambat · 6 Nov", "Hari ini", "Besok", "9 Nov". */
@@ -159,3 +173,6 @@ export const exportCsv = (filename: string, rows: (string | number | boolean | n
   document.body.removeChild(a);
   URL.revokeObjectURL(a.href);
 };
+
+/** Pesan dari error apa pun (aman tipe untuk `catch (e)`). */
+export const errMsg = (e: unknown, fallback = 'Terjadi kesalahan.') => (e instanceof Error && e.message ? e.message : fallback);

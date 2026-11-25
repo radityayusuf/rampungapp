@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import type { ProjectView, Route } from '../types';
+import type { AdminSection, ProjectView, Route } from '../types';
+
+const ADMIN_SECTIONS: AdminSection[] = ['ringkasan', 'workspace', 'pengguna', 'paket', 'pembayaran', 'pengaturan', 'sistem'];
 
 const VIEWS: ProjectView[] = ['kanban', 'list', 'kalender', 'timeline', 'tabel', 'docs'];
 
@@ -38,8 +40,13 @@ export function parseHash(hash: string): Route {
       return { page: 'pengaturan' };
     case 'integrasi':
       return { page: 'integrasi' };
-    case 'admin-sistem':
-      return { page: 'admin-sistem' };
+    case 'admin':
+    case 'admin-sistem': {
+      // 'admin-sistem' = alamat lama; tetap diarahkan ke panel baru.
+      const legacy: Record<string, AdminSection> = { pembayaran: 'pembayaran', workspace: 'workspace', pengguna: 'pengguna', server: 'sistem', ringkasan: 'ringkasan' };
+      const sec = (ADMIN_SECTIONS as string[]).includes(b ?? '') ? (b as AdminSection) : legacy[b ?? ''] ?? 'ringkasan';
+      return { page: 'admin', section: sec };
+    }
     case 'gabung':
       return { page: 'gabung', token: b ?? '' };
     case 'portal':
@@ -69,7 +76,7 @@ export const href = {
   sdm: '#/sdm',
   pengaturan: '#/pengaturan',
   integrasi: '#/integrasi',
-  adminSistem: '#/admin-sistem',
+  admin: (section: AdminSection = 'ringkasan') => (section === 'ringkasan' ? '#/admin' : `#/admin/${section}`),
   gabung: (t: string) => `#/gabung/${t}`,
   portal: (t: string) => `#/portal/${t}`,
   lupa: '#/lupa',

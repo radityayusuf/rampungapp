@@ -1,24 +1,30 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Copy, MessageCircle, Trash2 } from 'lucide-react';
 import { useApp } from '../store/AppContext';
-import { go, href } from '../store/router';
+import { href } from '../store/router';
 import { Avatar, Field, PageHeader, Pill, Progress } from '../components/ui';
+import { gbText, planOf, usePlanCatalog } from '../lib/plans';
 import { ApiError, api } from '../lib/api';
 import type { ApiInvite, ApiMember, Role } from '../lib/api';
-import { pct } from '../lib/format';
 
 const ROLE_LABEL: Record<string, string> = { owner: 'Pemilik', admin: 'Admin', member: 'Anggota', client: 'Klien' };
 const inviteLink = (t: string) => `${window.location.origin}/${href.gabung(t)}`;
 
+const fmtBytes = (n: number) => (n < 1024 ? `${n} B` : n < 1024 ** 2 ? `${(n / 1024).toFixed(1).replace('.', ',')} KB` : n < 1024 ** 3 ? `${(n / 1024 ** 2).toFixed(1).replace('.', ',')} MB` : `${(n / 1024 ** 3).toFixed(2).replace('.', ',')} GB`);
+
 export const SettingsPage: React.FC = () => {
-  const { workspace, users, me, mode, account, setModal, resetDemo, projects, updateWorkspace, renameMe, removeMemberRecord, notify } = useApp();
+  const { workspace, users, me, mode, account, setModal, projects, updateWorkspace, renameMe, updateMyPhone, removeMemberRecord, notify, integrations, refreshIntegrations } = useApp();
   const plan = workspace.plan.charAt(0).toUpperCase() + workspace.plan.slice(1);
-  const isAdmin = me.role === 'owner' || me.role === 'admin';
-  const isOwner = me.role === 'owner';
+  const isAdmin = me.role === 'owner' || me.role === 'admin' || me.role === 'superadmin';
+  const catalog = usePlanCatalog();
+  const storageGb = planOf(catalog, workspace.plan)?.limits.storageGb ?? null;
+  const isOwner = me.role === 'owner' || me.role === 'superadmin';
   const server = mode === 'server';
 
   const [wsName, setWsName] = useState(workspace.name);
   const [myName, setMyName] = useState(me.name);
+  const [myPhone, setMyPhone] = useState(me.phone ?? '');
+  useEffect(() => { void refreshIntegrations(); }, [refreshIntegrations]);
   const [members, setMembers] = useState<ApiMember[]>([]);
   const [invites, setInvites] = useState<ApiInvite[]>([]);
   const [email, setEmail] = useState('');
@@ -57,13 +63,17 @@ export const SettingsPage: React.FC = () => {
     <div className="flex flex-col gap-5 px-4 py-6 sm:px-8">
       <PageHeader eyebrow="Workspace" title="Pengaturan" />
 
-      <section className="card flex flex-wrap items-center justify-between gap-4 p-5"><div className="flex flex-col gap-1"><span className="text-[13px] text-arang-muted">Paket saat ini</span><span className="text-xl font-extrabold">{plan}</span><span className="text-[13px] text-arang-muted">{workspace.name} · {users.length} anggota · {projects.length} proyek</span></div><button type="button" className="btn btn-primary" onClick={() => setModal('pricing')}>Ubah paket</button></section>
+      <section className="card flex flex-wrap items-center justify-between gap-4 p-5"><div className="flex flex-col gap-1"><span className="text-[13px] text-arang-muted">Paket saat ini</span><span className="text-xl font-extrabold">{plan}</span>{workspace.planUntil && <span className="text-[13px] text-arang-body">Berlaku sampai {new Date(workspace.planUntil).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })} · tidak diperpanjang otomatis</span>}<span className="text-[13px] text-arang-muted">{workspace.name} · {users.length} anggota · {projects.length} proyek</span></div><button type="button" className="btn btn-primary" onClick={() => setModal('pricing')}>Kelola paket</button></section>
 
       <div className="grid gap-4 md:grid-cols-2">
         <section className="card flex flex-col gap-3 p-5"><h2 className="card-title">Profil saya</h2>
           <Field label="Nama" htmlFor="my-name"><input id="my-name" className="input" value={myName} onChange={(e) => setMyName(e.target.value)} /></Field>
           <span className="text-[13px] text-arang-muted">{account?.email ?? me.email} · {ROLE_LABEL[me.role]}</span>
           <button type="button" className="btn btn-outline self-start" disabled={!myName.trim() || myName.trim() === me.name} onClick={() => renameMe(myName).catch(fail)}>Simpan nama</button>
+          <Field label="Nomor WhatsApp" htmlFor="my-phone" hint="Dipakai otomasi untuk memberi tahu Anda lewat WhatsApp. Opsional.">
+            <input id="my-phone" className="input" inputMode="tel" placeholder="0812xxxxxxxx" value={myPhone} onChange={(e) => setMyPhone(e.target.value)} />
+          </Field>
+          <button type="button" className="btn btn-outline self-start" disabled={myPhone.trim() === (me.phone ?? '')} onClick={() => updateMyPhone(myPhone)}>Simpan nomor</button>
         </section>
         <section className="card flex flex-col gap-3 p-5"><h2 className="card-title">Workspace</h2>
           <Field label="Nama workspace" htmlFor="ws-name"><input id="ws-name" className="input" value={wsName} disabled={!isAdmin} onChange={(e) => setWsName(e.target.value)} /></Field>
@@ -76,17 +86,18 @@ export const SettingsPage: React.FC = () => {
         <div className="flex flex-col">
           {users.map((u) => {
             const r = (u.id === me.id ? me.role : roleOf(u.id)) ?? u.role;
-            const real = server && !u.demo && !Number.isNaN(accId(u.id));
+            const legacy = Number.isNaN(accId(u.id)); // catatan anggota lama tanpa akun
+            const real = server && !legacy;
             return (
               <div key={u.id} className="flex flex-wrap items-center gap-3 border-t border-line-soft py-3 first:border-0 first:pt-0">
                 <Avatar userId={u.id} size={36} />
                 <div className="min-w-0 flex-1 text-sm"><div className="font-bold">{u.name}{u.id === me.id && <span className="font-normal text-arang-muted"> (kamu)</span>}</div><div className="truncate text-arang-muted">{u.email || 'tanpa email'}</div></div>
-                {u.demo && <Pill bg="#FDF3DC" fg="#6B4A00" className="font-bold">Contoh</Pill>}
+                {legacy && <Pill bg="#FDF3DC" fg="#6B4A00" className="font-bold">Tanpa akun</Pill>}
                 {real && isOwner && r !== 'owner' ? (
                   <><label className="sr-only" htmlFor={`r-${u.id}`}>Peran {u.name}</label><select id={`r-${u.id}`} className="input input-sm w-auto" value={r} onChange={(e) => api.setRole(accId(u.id), e.target.value as 'admin' | 'member').then(() => { notify('Peran diperbarui', undefined, 'success'); reload(); }).catch(fail)}><option value="admin">Admin</option><option value="member">Anggota</option></select></>
                 ) : <Pill bg="#ECEEEA" fg="#3D4750" className="font-bold">{ROLE_LABEL[r]}</Pill>}
-                {isAdmin && u.id !== me.id && r !== 'owner' && (u.demo || real) && (
-                  <button type="button" aria-label={`Keluarkan ${u.name}`} className="btn-icon" onClick={() => { if (!window.confirm(`Keluarkan ${u.name} dari workspace?`)) return; (u.demo ? Promise.resolve() : api.removeMember(accId(u.id))).then(() => { removeMemberRecord(u.id); notify('Anggota dikeluarkan'); reload(); }).catch(fail); }}><Trash2 size={15} /></button>
+                {isAdmin && u.id !== me.id && r !== 'owner' && (legacy || real) && (
+                  <button type="button" aria-label={`Keluarkan ${u.name}`} className="btn-icon" onClick={() => { if (!window.confirm(`Keluarkan ${u.name} dari workspace?`)) return; (legacy ? Promise.resolve() : api.removeMember(accId(u.id))).then(() => { removeMemberRecord(u.id); notify('Anggota dikeluarkan'); reload(); }).catch(fail); }}><Trash2 size={15} /></button>
                 )}
               </div>
             );
@@ -119,12 +130,19 @@ export const SettingsPage: React.FC = () => {
             )}
           </div>
         )}
-        {!server && <span className="text-[13px] text-arang-muted">Undangan anggota hanya tersedia setelah masuk dengan akun (bukan mode lokal).</span>}
+        {!server && <span className="text-[13px] text-arang-muted">Undangan anggota hanya tersedia setelah masuk dengan akun.</span>}
       </section>
 
-      <section className="card flex flex-col gap-3 p-5"><h2 className="card-title">Penyimpanan</h2><Progress value={pct(workspace.storageUsedMB, workspace.storageMaxMB)} h={8} /><span className="text-[13px] text-arang-muted">{workspace.storageUsedMB} MB dari {Math.round(workspace.storageMaxMB / 1024)} GB terpakai</span></section>
+      <section className="card flex flex-col gap-2 p-5"><h2 className="card-title">Penyimpanan</h2>
+        {mode !== 'server' ? <span className="text-[13px] text-arang-muted">Penghitungan penyimpanan tersedia setelah masuk dengan akun.</span> : !integrations ? <span className="text-[13px] text-arang-muted" role="status">Menghitung…</span> : (
+          <div className="flex flex-col gap-2">
+            <span className="text-[13px] text-arang-body"><strong>{fmtBytes(integrations.storage.usedBytes)}</strong> terpakai oleh {integrations.storage.files} berkas lampiran{storageGb !== null ? ` dari batas ${gbText(storageGb)} paket ini.` : ' · paket ini tanpa batas penyimpanan.'}</span>
+            {storageGb !== null && <Progress value={(integrations.storage.usedBytes / (storageGb * 1024 ** 3)) * 100} h={6} />}
+          </div>
+        )}
+      </section>
       <section className="card flex flex-wrap items-center justify-between gap-4 p-5"><div className="flex flex-col gap-1"><h2 className="card-title">Integrasi</h2><span className="text-[13px] text-arang-muted">WhatsApp, ekspor kalender, dan token API.</span></div><a className="btn btn-outline" href={href.integrasi}>Buka Integrasi</a></section>
-      {isAdmin && <section className="card flex flex-wrap items-center justify-between gap-4 p-5"><div className="flex flex-col gap-1"><h2 className="card-title">Data demo</h2><span className="max-w-lg text-[13px] text-arang-muted">Mengembalikan seluruh data workspace ke data contoh Studio Nusa. Data yang ada akan terhapus.</span></div><button type="button" className="btn btn-outline" onClick={() => { if (window.confirm('Kembalikan SEMUA data workspace ke data demo awal? Data saat ini akan hilang.')) { resetDemo(); go(href.beranda); } }}>Reset data demo</button></section>}
+
     </div>
   );
 };

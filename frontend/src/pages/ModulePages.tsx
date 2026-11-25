@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Download, Mail, MessageCircle, Play, Plus, QrCode, Send, Square, Trash2 } from 'lucide-react';
+import { Download, Mail, MessageCircle, Play, Plus, Send, Square, Trash2 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp } from '../store/AppContext';
+import { InvoicePayment } from '../components/InvoicePayment';
 import { go, href } from '../store/router';
 import type { DealStage } from '../types';
 import { Avatar, Empty, Field, Modal, PageHeader, Pill, Progress, Segmented, Stat } from '../components/ui';
 import { DEAL_STAGES, TONE } from '../lib/meta';
-import { HARI, randomToken, addDays, diffDays, exportCsv, fmtClock, fmtDate, fmtDateLong, fmtDayDate, fmtDuration, isOverdue, parseISODate, pct, relDay, rupiah, rupiahJt, todayISO } from '../lib/format';
+import { HARI, randomToken, addDays, diffDays, exportCsv, fmtClock, fmtDate, fmtDateLong, fmtDayDate, fmtDuration, isOverdue, parseISODate, pct, relDay, rupiah, rupiahJt, todayISO, errMsg } from '../lib/format';
 
 const shell = 'flex flex-col gap-5 px-4 py-6 sm:px-8';
 
@@ -21,7 +22,7 @@ const csv = (name: string, rows: (string | number | boolean | null | undefined)[
 
 /* ---------------- Time Tracking ---------------- */
 export const TimePage: React.FC = () => {
-  const { workspace, timeEntries, tasks, projects, user, users, me, timer, timerSeconds, startTimer, stopTimer, addTimeEntry, updateWorkspace, setModal } = useApp();
+  const { workspace, timeEntries, tasks, projects, user, me, timer, timerSeconds, startTimer, stopTimer, addTimeEntry, updateWorkspace, setModal } = useApp();
   const [open, setOpen] = useState(false);
   const [f, setF] = useState({ taskId: '', hours: '1', minutes: '0', billable: true, date: todayISO() });
   const today = todayISO();
@@ -101,12 +102,12 @@ export const TimePage: React.FC = () => {
 
 /* ---------------- CRM ---------------- */
 export const CrmPage: React.FC<{ tab: 'pipeline' | 'klien' | 'portal' }> = ({ tab }) => {
-  const { workspace, deals, clients, projects, tasks, moveDeal, createDeal, addClient, deleteClient, deleteDeal, notify, mode, updateProject, canManage } = useApp();
+  const { workspace, deals, clients, projects, tasks, moveDeal, createDeal, addClient, deleteClient, deleteDeal, notify, mode, updateProject } = useApp();
   const [open, setOpen] = useState(false);
   const [clientModal, setClientModal] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [f, setF] = useState({ clientId: '', company: '', contact: '', need: '', value: '', stage: 'prospect' as DealStage });
-  const [cf, setCf] = useState({ company: '', contact: '', email: '', phone: '', status: 'lead' as const });
+  const [cf, setCf] = useState({ company: '', contact: '', email: '', phone: '', status: 'lead' as 'lead' | 'active' | 'past' });
   // Proyek yang portalnya sudah aktif tetapi belum punya token (data lama) diberi token.
   useEffect(() => {
     projects.forEach((p) => { if (p.clientPortalEnabled && !p.portalToken) updateProject(p.id, { portalToken: randomToken() }); });
@@ -237,7 +238,7 @@ export const CrmPage: React.FC<{ tab: 'pipeline' | 'klien' | 'portal' }> = ({ ta
             <Field label="Nomor WhatsApp" htmlFor="cl-ph"><input id="cl-ph" className="input" placeholder="08123456789" value={cf.phone} onChange={(e) => setCf({ ...cf, phone: e.target.value })} /></Field>
           </div>
           <Field label="Status" htmlFor="cl-st">
-            <select id="cl-st" className="input" value={cf.status} onChange={(e) => setCf({ ...cf, status: e.target.value as any })}>
+            <select id="cl-st" className="input" value={cf.status} onChange={(e) => setCf({ ...cf, status: e.target.value as 'lead' | 'active' | 'past' })}>
               <option value="lead">Prospek (Lead)</option>
               <option value="active">Aktif</option>
               <option value="past">Klien lama</option>
@@ -256,7 +257,7 @@ const PortalToggle: React.FC<{ id: string; on: boolean; tokenOf?: string }> = ({
 
 /* ---------------- Keuangan ---------------- */
 export const FinancePage: React.FC = () => {
-  const { workspace, invoices, clients, projects, expenses, createInvoice, payInvoice, addExpense, setModal, notify, canManage } = useApp();
+  const { workspace, invoices, clients, projects, expenses, createInvoice, addExpense, setModal, notify, canManage, integrations, mode } = useApp();
   const [sel, setSel] = useState<string | null>(null);
   const [inv, setInv] = useState(false);
   const [exp, setExp] = useState(false);
@@ -327,26 +328,7 @@ export const FinancePage: React.FC = () => {
             <div className="flex justify-between gap-4 text-[13px] leading-relaxed"><div className="flex flex-col"><span className="text-arang-muted">Kepada</span><span className="font-bold">{client(preview.clientId)?.company}</span><span>u.p. {client(preview.clientId)?.contact}</span></div><div className="flex flex-col text-right"><span className="text-arang-muted">Jatuh tempo</span><span className="font-bold">{fmtDateLong(preview.dueDate)}</span></div></div>
             <div className="flex flex-col gap-2 border-y border-line-soft py-3 text-sm">{preview.items.map((x, i) => <div key={i} className="flex justify-between gap-3"><span>{x.description}</span><span className="whitespace-nowrap font-bold">{rupiah(x.amount)}</span></div>)}</div>
             <div className="flex justify-between text-lg font-extrabold"><span>Total</span><span>{rupiah(total(preview))}</span></div>
-            {preview.status === 'unpaid' ? (
-              <div className="flex items-center gap-3.5 rounded-xl bg-canvas p-3.5 border border-line-soft">
-                <div className="flex flex-col items-center gap-1 bg-white p-2 rounded-lg border border-line-soft shrink-0">
-                  <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${encodeURIComponent(`00020101021226670016ID.CO.RAMPUNG.WWW0118936000000000000000520458125303360540${total(preview)}5802ID5913Studio Nusa6007Jakarta62170713${preview.number}6304`)}`}
-                    alt="QRIS"
-                    className="h-20 w-20 object-contain"
-                  />
-                  <span className="text-[10px] font-bold text-arang-muted">QRIS RESMI</span>
-                </div>
-                <div className="flex flex-col gap-1">
-                  <span className="text-[13px] font-semibold text-arang-body">Scan QRIS untuk Pembayaran</span>
-                  <span className="text-xs text-arang-muted">Dukungan GoPay, OVO, Dana, ShopeePay, BCA, Mandiri, dan seluruh bank Indonesia.</span>
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-xl bg-brand-soft p-3.5 text-[13px] font-semibold text-primary flex items-center gap-2">
-                <span>✓</span> Dibayar lunas {preview.paidAt ? fmtDate(preview.paidAt.slice(0, 10)) : ''} lewat QRIS.
-              </div>
-            )}
+            <InvoicePayment invoice={preview} total={total(preview)} />
             <div className="no-print flex flex-wrap gap-2">
               <button
                 type="button"
@@ -354,12 +336,12 @@ export const FinancePage: React.FC = () => {
                 className="btn btn-primary flex-1"
                 onClick={async () => {
                   const c = client(preview.clientId);
-                  if (!workspace.whatsappConnected) {
-                    notify('Hubungkan WhatsApp dulu', 'Buka Pengaturan → WhatsApp.');
+                  if (mode !== 'server' || !integrations?.whatsapp.configured) {
+                    notify('WhatsApp belum dikonfigurasi', 'Server belum memiliki WHATSAPP_TOKEN dan WHATSAPP_PHONE_NUMBER_ID.');
                     setModal('wa');
                     return;
                   }
-                  const phone = c?.phone || workspace.whatsappNumber || '';
+                  const phone = c?.phone || '';
                   if (!phone) {
                     notify('Nomor telepon tidak ada', 'Klien belum memiliki nomor telepon WhatsApp.');
                     return;
@@ -368,11 +350,11 @@ export const FinancePage: React.FC = () => {
                   try {
                     await api.sendWhatsApp({
                       phone,
-                      message: `Halo ${c?.contact || c?.company}, tagihan invoice ${preview.number} sebesar ${rupiah(total(preview))} telah diterbitkan dengan jatuh tempo ${fmtDateLong(preview.dueDate)}. Silakan scan kode QRIS atau hubungi kami untuk konfirmasi. Terima kasih!`
+                      message: `Halo ${c?.contact || c?.company}, tagihan invoice ${preview.number} sebesar ${rupiah(total(preview))} telah diterbitkan dengan jatuh tempo ${fmtDateLong(preview.dueDate)}. Silakan lakukan pembayaran atau hubungi kami bila ada pertanyaan. Terima kasih!`
                     });
-                    notify('Terkirim ke WhatsApp!', `${c?.contact || c?.company} (${phone})`, 'wa');
-                  } catch (err: any) {
-                    notify('Gagal kirim WhatsApp', err?.message || 'Gateway WhatsApp tidak merespons.');
+                    notify('Diterima WhatsApp', `Pesan untuk ${c?.contact || c?.company} (${phone}) dikirim.`, 'wa');
+                  } catch (err) {
+                    notify('Gagal kirim WhatsApp', errMsg(err, 'Gateway WhatsApp tidak merespons.'));
                   } finally {
                     setSendingWa(false);
                   }
@@ -381,11 +363,6 @@ export const FinancePage: React.FC = () => {
                 <Send size={15} />
                 {sendingWa ? 'Mengirim...' : 'Kirim via WhatsApp'}
               </button>
-              {preview.status === 'unpaid' && (
-                <button type="button" className="btn btn-kunyit flex-1" onClick={() => payInvoice(preview.id)}>
-                  Bayar via QRIS
-                </button>
-              )}
               <button type="button" className="btn btn-outline flex-1" onClick={() => window.print()}>Unduh PDF</button>
             </div>
           </section>
@@ -419,7 +396,7 @@ export const SdmPage: React.FC = () => {
   if (!workspace.enabledModules.sdm) return <Locked name="SDM" />;
   const today = todayISO();
   const mine = attendances.find((a) => a.userId === me.id && a.date === today);
-  const isAdmin = me.role === 'owner' || me.role === 'admin';
+  const isAdmin = me.role === 'owner' || me.role === 'admin' || me.role === 'superadmin';
   const tone = { hadir: ['#E3F3F0', '#0B5F54'], terlambat: ['#FDF3DC', '#6B4A00'], izin: ['#E6EFFA', '#1D5FA8'], cuti: ['#F0EBFB', '#5B3AA8'] } as const;
   const lt = { pending: ['Menunggu', '#FDF3DC', '#6B4A00'], approved: ['Disetujui', '#E3F3F0', '#0B5F54'], rejected: ['Ditolak', '#FDECEA', '#B42318'] } as const;
   return (
@@ -456,7 +433,7 @@ export const SdmPage: React.FC = () => {
       <div className="flex flex-wrap items-start gap-4">
         <section className="card min-w-0 flex-[3_1_480px] overflow-x-auto"><div className="border-b border-line-soft px-5 py-4"><h2 className="card-title">Kehadiran terbaru</h2></div>
           <table className="w-full min-w-[560px] border-collapse text-sm"><thead><tr className="text-left text-xs text-arang-muted">{['Tanggal', 'Anggota', 'Masuk', 'Pulang', 'Status'].map((h) => <th key={h} className="px-3 py-2.5 font-semibold first:pl-5">{h}</th>)}</tr></thead>
-            <tbody>{[...attendances].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 12).map((a) => <tr key={a.id} className="border-t border-line-soft"><td className="py-3 pl-5 pr-3 text-arang-muted">{fmtDayDate(a.date)}</td><td className="px-3 py-3 font-semibold">{user(a.userId).shortName}</td><td className="px-3 py-3">{a.checkIn}</td><td className="px-3 py-3">{a.checkOut ?? '–'}</td><td className="px-3 py-3"><Pill bg={tone[a.status][0]} fg={tone[a.status][1]} className="font-bold">{a.status.charAt(0).toUpperCase() + a.status.slice(1)}</Pill></td></tr>)}</tbody></table></section>
+            <tbody>{!attendances.length && <tr className="border-t border-line-soft"><td colSpan={5} className="px-5 py-6 text-center text-sm text-arang-muted">Belum ada absensi. Tekan Check-in untuk mencatat kehadiran hari ini.</td></tr>}{[...attendances].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 12).map((a) => <tr key={a.id} className="border-t border-line-soft"><td className="py-3 pl-5 pr-3 text-arang-muted">{fmtDayDate(a.date)}</td><td className="px-3 py-3 font-semibold">{user(a.userId).shortName}</td><td className="px-3 py-3">{a.checkIn}</td><td className="px-3 py-3">{a.checkOut ?? '–'}</td><td className="px-3 py-3"><Pill bg={tone[a.status][0]} fg={tone[a.status][1]} className="font-bold">{a.status.charAt(0).toUpperCase() + a.status.slice(1)}</Pill></td></tr>)}</tbody></table></section>
         <section className="card flex min-w-0 flex-[2_1_300px] flex-col gap-3.5 p-5"><h2 className="card-title">Kapasitas tim</h2>
           {users.map((u) => { const n = tasks.filter((t) => t.assigneeId === u.id && t.status !== 'done').length; const onLeave = leaves.some((l) => l.userId === u.id && l.status === 'approved' && l.startDate <= today && l.endDate >= today); return <div key={u.id} className="flex items-center gap-3"><Avatar userId={u.id} size={32} /><div className="flex flex-1 flex-col gap-1.5"><div className="flex justify-between text-[13px]"><span className="font-semibold">{u.name}</span><span className="text-arang-muted">{onLeave ? 'Cuti' : `${n} tugas`}</span></div><Progress value={n * 10} color={n > 10 ? '#B42318' : '#0F9D8A'} /></div></div>; })}</section>
       </div>

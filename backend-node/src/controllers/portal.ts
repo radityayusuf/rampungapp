@@ -1,5 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../db';
+import { atLeast } from '../services/plans';
+import { planOf } from '../services/workspacePlan';
 
 export async function show(req: Request, res: Response): Promise<void> {
   const token = String(req.params.token || '');
@@ -8,30 +10,31 @@ export async function show(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  // Find project with portalToken matching
-  const projectRecords = await prisma.records.findMany({
-    where: {
-      collection: 'projects',
-    },
+  // Cari langsung di database (token sudah dipastikan hanya huruf/angka, jadi aman untuk LIKE),
+  // bukan memuat dan mem-parse SEMUA proyek dari SEMUA workspace pada setiap permintaan publik.
+  const candidates = await prisma.records.findMany({
+    where: { collection: 'projects', data: { contains: `"portalToken":"${token}"` } },
+    take: 5,
   });
 
   let targetProject: any = null;
   let workspaceId: bigint | null = null;
 
-  for (const r of projectRecords) {
+  for (const r of candidates) {
     try {
       const data = JSON.parse(r.data);
-      if (data.portalToken === token && data.clientPortalEnabled) {
+      if (data.portalToken === token && data.clientPortalEnabled === true) {
         targetProject = data;
         workspaceId = r.workspace_id;
         break;
       }
     } catch {
-      // ignore
+      // abaikan data rusak
     }
   }
 
-  if (!targetProject || !workspaceId) {
+  // Portal klien termasuk paket Bisnis; bila paket turun, portal ikut tidak tersedia (tanpa membocorkan alasannya ke publik).
+  if (!targetProject || !workspaceId || !atLeast((await planOf(workspaceId)).plan, 'bisnis')) {
     res.status(404).json({ message: 'Portal tidak ditemukan atau sudah dinonaktifkan.' });
     return;
   }

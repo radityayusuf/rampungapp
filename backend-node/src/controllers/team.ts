@@ -1,7 +1,10 @@
+import { emailLayout, escapeHtml, sendMail } from '../mail';
 import { Response } from 'express';
 import crypto from 'crypto';
 import { prisma } from '../db';
 import { AuthRequest } from '../types';
+import { parseEmail, parseId } from '../validation';
+import { memberLimitError } from '../services/workspacePlan';
 
 function isAdmin(user: any): boolean {
   return user.role === 'owner' || user.role === 'admin' || user.role === 'superadmin';
@@ -52,7 +55,11 @@ export async function updateMember(req: AuthRequest, res: Response): Promise<voi
     return;
   }
 
-  const targetId = parseInt(String(req.params.id), 10);
+  const targetId = parseId(req.params.id);
+  if (targetId === null) {
+    res.status(404).json({ message: 'Anggota tidak ditemukan.' });
+    return;
+  }
   const { role } = req.body;
 
   if (role !== 'admin' && role !== 'member') {
@@ -61,7 +68,7 @@ export async function updateMember(req: AuthRequest, res: Response): Promise<voi
   }
 
   const member = await prisma.users.findFirst({
-    where: { id: BigInt(targetId), workspace_id: user.workspace_id },
+    where: { id: targetId, workspace_id: user.workspace_id },
   });
 
   if (!member) {
@@ -75,7 +82,7 @@ export async function updateMember(req: AuthRequest, res: Response): Promise<voi
   }
 
   await prisma.users.update({
-    where: { id: BigInt(targetId) },
+    where: { id: targetId },
     data: { role },
   });
 
@@ -89,9 +96,13 @@ export async function removeMember(req: AuthRequest, res: Response): Promise<voi
     return;
   }
 
-  const targetId = parseInt(String(req.params.id), 10);
+  const targetId = parseId(req.params.id);
+  if (targetId === null) {
+    res.status(404).json({ message: 'Anggota tidak ditemukan.' });
+    return;
+  }
   const member = await prisma.users.findFirst({
-    where: { id: BigInt(targetId), workspace_id: user.workspace_id },
+    where: { id: targetId, workspace_id: user.workspace_id },
   });
 
   if (!member) {
@@ -172,13 +183,20 @@ export async function invite(req: AuthRequest, res: Response): Promise<void> {
     return;
   }
 
-  const { email, role } = req.body;
-  if (!email || !email.includes('@')) {
+  const email = parseEmail(req.body?.email);
+  const role = req.body?.role;
+  if (!email) {
     res.status(422).json({ message: 'Email tidak valid.' });
     return;
   }
   if (role !== 'admin' && role !== 'member') {
     res.status(422).json({ message: 'Peran harus admin atau member.' });
+    return;
+  }
+
+  const limit = await memberLimitError(user.workspace_id, 1, true, email.toLowerCase());
+  if (limit) {
+    res.status(402).json({ message: limit });
     return;
   }
 
@@ -213,13 +231,29 @@ export async function invite(req: AuthRequest, res: Response): Promise<void> {
   const ws = await prisma.workspaces.findUnique({ where: { id: wsId } });
   const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
   const link = `${frontendUrl}/#/gabung/${token}`;
-  console.log(`[INVITE] Link for ${email} to join ${ws?.name || 'Workspace'}: ${link}`);
+  const wsName = ws?.name || 'Workspace';
+  const to = email.toLowerCase();
+  const roleLabel = role === 'admin' ? 'Admin' : 'Anggota';
+  const emailed = await sendMail(
+    to,
+    `${user.name} mengundang Anda ke ${wsName} di Rampung`,
+    `Halo,\n\n${user.name} mengundang Anda bergabung ke workspace "${wsName}" di Rampung sebagai ${roleLabel}.\n\nBuat akun lewat tautan berikut (khusus untuk ${to}):\n${link}\n\nSalam,\nTim Rampung`,
+    emailLayout({
+      preheader: `${escapeHtml(user.name)} mengundang Anda ke ${escapeHtml(wsName)}.`,
+      title: `Anda diundang ke ${escapeHtml(wsName)}`,
+      bodyHtml: `<p style="margin:0 0 12px;"><b>${escapeHtml(user.name)}</b> mengundang Anda bergabung ke workspace <b>${escapeHtml(wsName)}</b> di Rampung sebagai <b>${roleLabel}</b>.</p><p style="margin:0;">Rampung membantu tim merencanakan proyek, membagi tugas, dan memantau progres sampai rampung.</p>`,
+      buttonText: 'Gabung ke tim',
+      buttonUrl: link,
+      footnote: `Undangan ini khusus untuk <b>${escapeHtml(to)}</b> — daftar dengan email yang sama. Jika Anda tidak mengenal pengirimnya, abaikan saja email ini.`,
+    }),
+  );
+  if (!emailed) console.log(`[INVITE] SMTP belum dikonfigurasi/gagal. Tautan untuk ${email}: ${link}`);
 
   res.status(201).json({
     token,
     email: email.toLowerCase(),
     role,
-    emailed: true,
+    emailed,
   });
 }
 
@@ -230,10 +264,14 @@ export async function revokeInvite(req: AuthRequest, res: Response): Promise<voi
     return;
   }
 
-  const id = parseInt(String(req.params.id), 10);
+  const id = parseId(req.params.id);
+  if (id === null) {
+    res.status(404).json({ message: 'Undangan tidak ditemukan.' });
+    return;
+  }
   await prisma.invites.deleteMany({
     where: {
-      id: BigInt(id),
+      id,
       workspace_id: user.workspace_id,
     },
   });
@@ -343,10 +381,14 @@ export async function deleteToken(req: AuthRequest, res: Response): Promise<void
     return;
   }
 
-  const id = parseInt(String(req.params.id), 10);
+  const id = parseId(req.params.id);
+  if (id === null) {
+    res.status(404).json({ message: 'Token tidak ditemukan.' });
+    return;
+  }
   await prisma.api_tokens.deleteMany({
     where: {
-      id: BigInt(id),
+      id,
       user_id: user.id,
       name: { not: null },
     },

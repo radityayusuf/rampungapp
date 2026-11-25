@@ -3,11 +3,22 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { prisma } from '../db';
 import { AuthRequest } from '../types';
+import { verifyGoogleCredential } from '../google';
+import { emailLayout, escapeHtml, sendMail } from '../mail';
+import { isStr, parseEmail, parseName } from '../validation';
+import { isSuperadminUser } from '../superadmin';
+import { memberLimitError } from '../services/workspacePlan';
 
 export const RESET_MINUTES = 60;
 
-function validatePassword(password: string): string | null {
-  if (!password || password.length < 8) {
+function validatePassword(password: unknown): string | null {
+  if (!isStr(password)) {
+    return 'Kata sandi harus berupa teks.';
+  }
+  if (password.length > 200) {
+    return 'Kata sandi terlalu panjang.';
+  }
+  if (password.length < 8) {
     return 'Kata sandi minimal 8 karakter.';
   }
   if (!/[a-zA-Z]/.test(password)) {
@@ -55,26 +66,32 @@ async function presentUser(user: any) {
     role: user.role,
     workspace_id: user.workspace_id ? Number(user.workspace_id) : null,
     workspace_name: wsName,
+    is_superadmin: isSuperadminUser(user),
   };
 }
 
-// In-memory rate limiter for login
-const loginAttempts: Map<string, { count: number; firstAttempt: number }> = new Map();
-
 export async function register(req: AuthRequest, res: Response): Promise<void> {
-  const { name, email, password, invite: inviteToken } = req.body;
+  const body = req.body ?? {};
+  const name = parseName(body.name);
+  const email = parseEmail(body.email);
+  const password = body.password;
+  const inviteToken = body.invite;
 
-  if (!name || typeof name !== 'string' || name.trim().length === 0) {
-    res.status(422).json({ message: 'Nama harus diisi.' });
+  if (!name) {
+    res.status(422).json({ message: 'Nama harus diisi (maksimal 100 karakter).' });
     return;
   }
-  if (!email || typeof email !== 'string' || !email.includes('@')) {
+  if (!email) {
     res.status(422).json({ message: 'Email tidak valid.' });
     return;
   }
   const pwdErr = validatePassword(password);
   if (pwdErr) {
     res.status(422).json({ message: pwdErr });
+    return;
+  }
+  if (inviteToken !== undefined && inviteToken !== null && inviteToken !== '' && !isStr(inviteToken)) {
+    res.status(422).json({ message: 'Undangan tidak valid atau sudah dipakai.' });
     return;
   }
 
@@ -97,6 +114,11 @@ export async function register(req: AuthRequest, res: Response): Promise<void> {
     }
     if (invite.email.toLowerCase() !== email.toLowerCase()) {
       res.status(422).json({ message: `Undangan ini untuk email ${invite.email}.` });
+      return;
+    }
+    const limit = await memberLimitError(invite.workspace_id, 1, false);
+    if (limit) {
+      res.status(402).json({ message: limit });
       return;
     }
   }
@@ -143,7 +165,16 @@ export async function register(req: AuthRequest, res: Response): Promise<void> {
     });
 
     return newUser;
+  }).catch((e: { code?: string }) => {
+    // Dua pendaftaran serentak dengan email sama: yang kalah kena batasan unik di database.
+    if (e?.code === 'P2002') return null;
+    throw e;
   });
+
+  if (!user) {
+    res.status(422).json({ message: 'Email ini sudah terdaftar.' });
+    return;
+  }
 
   const token = await issueToken(user.id);
   const presented = await presentUser(user);
@@ -155,41 +186,21 @@ export async function register(req: AuthRequest, res: Response): Promise<void> {
 }
 
 export async function login(req: AuthRequest, res: Response): Promise<void> {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    res.status(422).json({ message: 'Email atau kata sandi salah.' });
+  const email = parseEmail(req.body?.email);
+  const password = req.body?.password;
+  const fail = () => res.status(422).json({ message: 'Email atau kata sandi salah.' });
+
+  if (!email || !isStr(password) || password.length === 0 || password.length > 200) {
+    fail();
     return;
   }
 
-  const key = email.toLowerCase();
-  const now = Date.now();
-  const attempt = loginAttempts.get(key);
-
-  if (attempt) {
-    if (now - attempt.firstAttempt < 60000) {
-      if (attempt.count >= 5) {
-        const remainingSec = Math.ceil((60000 - (now - attempt.firstAttempt)) / 1000);
-        res.status(429).json({ message: `Terlalu banyak percobaan masuk. Coba lagi dalam ${remainingSec} detik.` });
-        return;
-      }
-    } else {
-      loginAttempts.delete(key);
-    }
-  }
-
-  const user = await prisma.users.findUnique({
-    where: { email: email.toLowerCase() },
-  });
-
+  // Pembatasan percobaan (per IP dan per akun) dilakukan oleh middleware di rateLimit.ts.
+  const user = await prisma.users.findUnique({ where: { email } });
   if (!user || !(await bcrypt.compare(password, user.password))) {
-    const cur = loginAttempts.get(key) || { count: 0, firstAttempt: now };
-    cur.count++;
-    loginAttempts.set(key, cur);
-    res.status(422).json({ message: 'Email atau kata sandi salah.' });
+    fail();
     return;
   }
-
-  loginAttempts.delete(key);
 
   const token = await issueToken(user.id);
   const presented = await presentUser(user);
@@ -201,66 +212,42 @@ export async function login(req: AuthRequest, res: Response): Promise<void> {
 }
 
 export async function googleAuth(req: AuthRequest, res: Response): Promise<void> {
-  const { credential, email, name, invite: inviteToken } = req.body;
+  const { credential, invite: inviteToken } = req.body ?? {};
 
-  let userEmail = email;
-  let userName = name;
-
-  if (credential && typeof credential === 'string') {
-    try {
-      // Verifikasi token asli secara langsung ke server OAuth2 Google
-      const gRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`);
-      if (gRes.ok) {
-        const gInfo: any = await gRes.json();
-        if (gInfo.email) {
-          userEmail = gInfo.email;
-          userName = gInfo.name || gInfo.email.split('@')[0];
-        }
-      } else {
-        // Fallback parsing payload jika server Google tidak dapat dijangkau
-        const parts = credential.split('.');
-        if (parts.length === 3) {
-          const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf-8'));
-          if (payload.email) {
-            userEmail = payload.email;
-            userName = payload.name || payload.email.split('@')[0];
-          }
-        }
-      }
-    } catch {
-      try {
-        const parts = credential.split('.');
-        if (parts.length === 3) {
-          const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf-8'));
-          if (payload.email) {
-            userEmail = payload.email;
-            userName = payload.name || payload.email.split('@')[0];
-          }
-        }
-      } catch {
-        // Abaikan
-      }
-    }
-  }
-
-  if (!userEmail || typeof userEmail !== 'string' || !userEmail.includes('@')) {
-    res.status(422).json({ message: 'Autentikasi Google gagal: Email tidak valid.' });
+  // Hanya ID token Google asli yang diterima. Email/nama dari body TIDAK dipercaya.
+  if (typeof credential !== 'string' || credential.length < 20 || credential.length > 4096) {
+    res.status(422).json({ message: 'Kredensial Google diperlukan.' });
     return;
   }
 
-  const cleanEmail = userEmail.toLowerCase().trim();
-  const cleanName = (userName || cleanEmail.split('@')[0]).trim();
+  const verified = await verifyGoogleCredential(credential);
+  if (!verified.ok) {
+    res.status(verified.status).json({ message: verified.message });
+    return;
+  }
 
-  let user = await prisma.users.findUnique({
-    where: { email: cleanEmail },
-  });
+  const cleanEmail = verified.email.toLowerCase().trim();
+  const cleanName = verified.name.trim().slice(0, 100) || cleanEmail.split('@')[0].slice(0, 100);
+
+  let user = await prisma.users.findUnique({ where: { email: cleanEmail } });
 
   if (!user) {
-    let invite: any = null;
-    if (inviteToken) {
-      invite = await prisma.invites.findFirst({
-        where: { token: inviteToken, accepted_at: null },
-      });
+    let invite: { id: bigint; workspace_id: bigint; role: string; email: string } | null = null;
+    if (typeof inviteToken === 'string' && inviteToken) {
+      invite = await prisma.invites.findFirst({ where: { token: inviteToken, accepted_at: null } });
+      if (!invite) {
+        res.status(422).json({ message: 'Undangan tidak valid atau sudah dipakai.' });
+        return;
+      }
+      if (invite.email.toLowerCase() !== cleanEmail) {
+        res.status(422).json({ message: `Undangan ini untuk email ${invite.email}.` });
+        return;
+      }
+      const limit = await memberLimitError(invite.workspace_id, 1, false);
+      if (limit) {
+        res.status(402).json({ message: limit });
+        return;
+      }
     }
 
     const randomPassword = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 12);
@@ -268,46 +255,28 @@ export async function googleAuth(req: AuthRequest, res: Response): Promise<void>
     user = await prisma.$transaction(async (tx) => {
       if (invite) {
         const newUser = await tx.users.create({
-          data: {
-            name: cleanName,
-            email: cleanEmail,
-            password: randomPassword,
-            workspace_id: invite.workspace_id,
-            role: invite.role,
-            email_verified_at: new Date(),
-          },
+          data: { name: cleanName, email: cleanEmail, password: randomPassword, workspace_id: invite.workspace_id, role: invite.role, email_verified_at: new Date() },
         });
-        await tx.invites.update({
-          where: { id: invite.id },
-          data: { accepted_at: new Date() },
-        });
+        await tx.invites.update({ where: { id: invite.id }, data: { accepted_at: new Date() } });
         return newUser;
       }
 
-      const ws = await tx.workspaces.create({
-        data: {
-          name: `Workspace ${cleanName}`,
-        },
-      });
-
+      const ws = await tx.workspaces.create({ data: { name: `Workspace ${cleanName}` } });
       const newUser = await tx.users.create({
-        data: {
-          name: cleanName,
-          email: cleanEmail,
-          password: randomPassword,
-          workspace_id: ws.id,
-          role: 'owner',
-          email_verified_at: new Date(),
-        },
+        data: { name: cleanName, email: cleanEmail, password: randomPassword, workspace_id: ws.id, role: 'owner', email_verified_at: new Date() },
       });
-
-      await tx.workspaces.update({
-        where: { id: ws.id },
-        data: { owner_id: newUser.id },
-      });
-
+      await tx.workspaces.update({ where: { id: ws.id }, data: { owner_id: newUser.id } });
       return newUser;
     });
+  } else if (!user.email_verified_at) {
+    // Akun dibuat lewat email+sandi tanpa verifikasi, lalu pemilik email asli masuk lewat Google.
+    // Anggap pendaftar awal tidak dipercaya: ganti sandi dan cabut semua sesi perangkat.
+    const randomPassword = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 12);
+    const [updated] = await prisma.$transaction([
+      prisma.users.update({ where: { id: user.id }, data: { password: randomPassword, email_verified_at: new Date() } }),
+      prisma.api_tokens.deleteMany({ where: { user_id: user.id, name: null } }),
+    ]);
+    user = updated;
   }
 
   const token = await issueToken(user.id);
@@ -320,7 +289,7 @@ export async function googleAuth(req: AuthRequest, res: Response): Promise<void>
 }
 
 export async function forgot(req: AuthRequest, res: Response): Promise<void> {
-  const { email } = req.body;
+  const email = parseEmail(req.body?.email);
   if (!email) {
     res.json({ message: 'Jika email terdaftar, tautan atur ulang sudah dikirim.' });
     return;
@@ -349,15 +318,29 @@ export async function forgot(req: AuthRequest, res: Response): Promise<void> {
 
     const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
     const link = `${frontendUrl}/#/reset/${plain}/${encodeURIComponent(user.email)}`;
-    console.log(`[PASSWORD RESET] Email to ${user.email}:\nReset link: ${link}`);
+    // Tidak ditunggu: waktu respons tidak boleh membedakan email terdaftar dan tidak.
+    void sendMail(
+      user.email,
+      'Atur ulang kata sandi Rampung',
+      `Halo ${user.name},\n\nKami menerima permintaan mengatur ulang kata sandi akun Rampung Anda.\n\nBuka tautan berikut (berlaku ${RESET_MINUTES} menit):\n${link}\n\nAbaikan email ini jika Anda tidak memintanya.\n\nSalam,\nTim Rampung`,
+      emailLayout({
+        preheader: 'Tautan untuk mengatur ulang kata sandi Rampung Anda.',
+        title: 'Atur ulang kata sandi',
+        bodyHtml: `<p style="margin:0 0 12px;">Halo <b>${escapeHtml(user.name)}</b>,</p><p style="margin:0;">Kami menerima permintaan untuk mengatur ulang kata sandi akun Rampung Anda. Klik tombol di bawah untuk membuat kata sandi baru. Tautan berlaku <b>${RESET_MINUTES} menit</b>.</p>`,
+        buttonText: 'Buat kata sandi baru',
+        buttonUrl: link,
+        footnote: 'Tidak merasa meminta ini? Abaikan email ini — kata sandi Anda tidak berubah.',
+      }),
+    ).then((ok) => { if (!ok) console.log(`[PASSWORD RESET] SMTP belum dikonfigurasi/gagal. Tautan untuk ${user.email}: ${link}`); });
   }
 
   res.json({ message: 'Jika email terdaftar, tautan atur ulang sudah dikirim.' });
 }
 
 export async function reset(req: AuthRequest, res: Response): Promise<void> {
-  const { email, token, password } = req.body;
-  if (!email || !token || !password) {
+  const email = parseEmail(req.body?.email);
+  const { token, password } = req.body ?? {};
+  if (!email || !isStr(token) || token.length === 0 || token.length > 200 || !isStr(password)) {
     res.status(422).json({ message: 'Data tidak lengkap.' });
     return;
   }
@@ -407,8 +390,6 @@ export async function reset(req: AuthRequest, res: Response): Promise<void> {
     });
   });
 
-  loginAttempts.delete(email.toLowerCase());
-
   const newToken = await issueToken(user.id);
   const presented = await presentUser(user);
 
@@ -432,9 +413,9 @@ export async function updateMe(req: AuthRequest, res: Response): Promise<void> {
     res.status(401).json({ message: 'Tidak terotentikasi.' });
     return;
   }
-  const { name } = req.body;
-  if (!name || typeof name !== 'string' || name.trim().length === 0) {
-    res.status(422).json({ message: 'Nama harus diisi.' });
+  const name = parseName(req.body?.name);
+  if (!name) {
+    res.status(422).json({ message: 'Nama harus diisi (maksimal 100 karakter).' });
     return;
   }
 

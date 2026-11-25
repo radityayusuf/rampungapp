@@ -37,8 +37,54 @@ async function call<T>(path: string, init: { method?: string; body?: unknown; au
   return json as T;
 }
 
+/** Kirim multipart (unggah berkas) dengan penanganan galat yang sama seperti call(). */
+async function callForm<T>(path: string, form: FormData, method = 'POST'): Promise<T> {
+  const token = getToken();
+  let res: Response;
+  try {
+    res = await fetch(BASE + path, { method, headers: { Accept: 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: form });
+  } catch {
+    throw new ApiError('Server tidak terjangkau. Pastikan backend berjalan.', 0);
+  }
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(json?.message ?? `Permintaan gagal (${res.status}).`, res.status);
+  return json as T;
+}
+
+/** Ambil berkas yang butuh login (bukti transfer, laporan) sebagai Blob. */
+async function fetchBlob(path: string): Promise<Blob> {
+  const token = getToken();
+  let res: Response;
+  try {
+    res = await fetch(BASE + path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  } catch {
+    throw new ApiError('Server tidak terjangkau. Pastikan backend berjalan.', 0);
+  }
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    throw new ApiError(j?.message ?? `Permintaan gagal (${res.status}).`, res.status);
+  }
+  return res.blob();
+}
+
+/** Simpan Blob sebagai unduhan, atau buka di tab baru bila `open`. */
+export function saveBlob(blob: Blob, filename: string, open = false) {
+  const url = URL.createObjectURL(blob);
+  if (open) {
+    window.open(url, '_blank', 'noopener');
+  } else {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 export type Role = 'owner' | 'admin' | 'member' | 'superadmin' | 'client';
-export interface ApiUser { id: number; name: string; email: string; role: Role; workspace_id: number; workspace_name: string }
+export interface ApiUser { id: number; name: string; email: string; role: Role; workspace_id: number; workspace_name: string; is_superadmin?: boolean }
 export interface Change { c: string; id: string; data: unknown | null }
 export interface PullResult { empty: boolean; rev: number; collections: Record<string, unknown[]> }
 export interface ApiMember { id: number; name: string; email: string; role: Role }
@@ -60,17 +106,96 @@ export interface UploadResult {
   uploadedAt: string;
 }
 
-export interface QrisGenerateResult {
-  status: string;
-  transactionId: string;
-  invoiceId: string;
+export type PaymentStatus = 'pending' | 'submitted' | 'paid' | 'rejected' | 'expired';
+export interface PlanPurchaseMeta {
+  plan: 'pro' | 'bisnis'; period: 'monthly' | 'yearly'; seats: number; months: number; pricePerUserMonth: number;
+  transfer?: { method?: 'qris' | 'bank'; senderName?: string; note?: string };
+}
+/** Satu tagihan paket. Nominal = harga paket + kode unik; semuanya dihitung server. */
+export interface PlanPayment {
+  orderId: string;
+  status: PaymentStatus;
   amount: number;
-  currency: string;
-  merchant: string;
-  qrPayload: string;
-  qrImageUrl: string;
-  expiresAt: string;
-  message: string;
+  baseAmount: number;
+  uniqueCode: number;
+  expiresAt: string | null;
+  createdAt: string | null;
+  submittedAt: string | null;
+  paidAt: string | null;
+  reviewedAt: string | null;
+  reviewNote: string | null;
+  hasProof: boolean;
+  proofName: string | null;
+  meta: PlanPurchaseMeta;
+}
+export interface BankAccount { id: string; bank: string; number: string; holder: string }
+/** Tujuan pembayaran yang diatur superadmin. */
+export interface PaymentInfo { qrisImage: string | null; qrisName: string; accounts: BankAccount[]; instructions: string }
+
+/** Paket, harga, pemakaian, tujuan pembayaran, dan riwayat tagihan (semua dari server). */
+export interface BillingInfo {
+  plan: 'gratis' | 'pro' | 'bisnis' | 'enterprise';
+  planUntil: string | null;
+  expired: boolean;
+  trialAvailable: boolean;
+  trialDays: number;
+  seats: number;
+  prices: { pro: number; bisnis: number };
+  periods: Record<'monthly' | 'yearly', { months: number; charged: number }>;
+  limits: { members: number | null; activeProjects: number | null; storageBytes: number | null };
+  usage: { members: number; activeProjects: number; storageBytes: number };
+  paymentsConfigured: boolean;
+  paymentInfo: PaymentInfo;
+  paymentTtlHours: number;
+  canPurchase: boolean;
+  pending: PlanPayment | null;
+  history: PlanPayment[];
+}
+
+/** Katalog paket (publik) dan konfigurasi yang dapat diubah Superadmin. */
+export interface PlanLimits { members: number | null; activeProjects: number | null; storageGb: number | null }
+export interface PlanCatalogEntry { key: 'gratis' | 'pro' | 'bisnis' | 'enterprise'; name: string; monthly: number | null; desc: string; items: string[]; popular: boolean; limits: PlanLimits }
+export interface PlanCatalog { yearlyChargedMonths: number; trialDays: number; plans: PlanCatalogEntry[] }
+export interface PlanConfig {
+  prices: { pro: number; bisnis: number };
+  yearlyChargedMonths: number;
+  trialDays: number;
+  proBusinessModules: number;
+  limits: Record<'gratis' | 'pro' | 'bisnis', PlanLimits>;
+  catalog: Record<'gratis' | 'pro' | 'bisnis' | 'enterprise', { desc: string; items: string[] }>;
+}
+
+/** Pengaturan tujuan pembayaran (panel superadmin). */
+export interface PaymentSettings extends PaymentInfo { uniqueCode: boolean; configured: boolean }
+export interface AdminPayment {
+  id: number; orderId: string; workspaceId: number; workspaceName: string; buyerName: string; buyerEmail: string;
+  plan: string; period: string; seats: number; months: number; baseAmount: number; uniqueCode: number; amount: number;
+  status: PaymentStatus; statusLabel: string; method: string; senderName: string; buyerNote: string;
+  hasProof: boolean; proofName: string | null;
+  createdAt: string | null; submittedAt: string | null; reviewedAt: string | null; paidAt: string | null;
+  reviewerName: string; reviewNote: string;
+}
+export interface AdminPaymentList {
+  items: AdminPayment[]; total: number; page: number; pageSize: number; awaitingReviewAll: number;
+  summary: { total: number; paidCount: number; paidAmount: number; awaitingReview: number; pending: number; rejected: number; expired: number };
+}
+export interface PaymentFilter { status?: string; q?: string; from?: string; to?: string; basis?: 'created' | 'paid'; page?: number; pageSize?: number }
+const qs = (f: PaymentFilter, extra: Record<string, string> = {}) => {
+  const u = new URLSearchParams();
+  for (const [k, v] of Object.entries({ ...f, ...extra })) if (v !== undefined && v !== '') u.set(k, String(v));
+  const t = u.toString();
+  return t ? `?${t}` : '';
+};
+
+/** Apa yang BENAR-BENAR aktif di server (bukan klaim UI). */
+export interface IntegrationStatus {
+  payments: { configured: boolean; method: 'manual' };
+  whatsapp: { configured: boolean; reachable: boolean | null; phoneNumber: string | null; accountName: string | null };
+  ai: { configured: boolean; model: string | null };
+  webhook: { services: string[] };
+  email: { configured: boolean };
+  google: { configured: boolean };
+  storage: { usedBytes: number; files: number };
 }
 
 export interface AiBreakdownResult {
@@ -79,15 +204,19 @@ export interface AiBreakdownResult {
   totalEstimatedHours: string;
   subtasks: { title: string; estimatedMinutes: number }[];
   advice: string;
+  /** ai = dihasilkan model AI; template = saran berbasis kata kunci (bukan AI). */
+  source: 'ai' | 'template';
+  model?: string;
 }
 
 export interface AiSummarizeResult {
   projectName: string;
   completionRate: string;
-  stats: { total: number; done: number; inProgress: number; review: number; todo: number };
+  stats: { total: number; done: number; inProgress: number; review: number; todo: number; overdue: number };
   healthStatus: 'on_track' | 'at_risk' | 'delayed';
   summary: string;
   recommendation: string;
+  source: 'analisis';
 }
 
 export const api = {
@@ -138,28 +267,52 @@ export const api = {
     return res.json();
   },
 
-  // ─── Integrasi QRIS ───
-  generateQris: (body: { invoiceId?: string; amount: number; customerName?: string }) =>
-    call<QrisGenerateResult>('/integrations/qris/generate', { method: 'POST', body }),
-  verifyQris: (body: { invoiceId: string; transactionId?: string }) =>
-    call<{ status: string; invoiceId: string; paidAt: string; message: string }>('/integrations/qris/verify', { method: 'POST', body }),
+  // ─── Paket & penagihan ───
+  billing: () => call<BillingInfo>('/billing'),
+  checkoutPlan: (plan: 'pro' | 'bisnis', period: 'monthly' | 'yearly') => call<PlanPayment>('/billing/checkout', { method: 'POST', body: { plan, period } }),
+  planPayment: (orderId: string) => call<PlanPayment>(`/billing/payments/${encodeURIComponent(orderId)}`),
+  submitProof: (orderId: string, file: File, extra: { method?: 'qris' | 'bank'; senderName?: string; note?: string }) => {
+    const f = new FormData();
+    if (extra.method) f.set('method', extra.method);
+    if (extra.senderName) f.set('senderName', extra.senderName);
+    if (extra.note) f.set('note', extra.note);
+    f.set('proof', file);
+    return callForm<PlanPayment>(`/billing/payments/${encodeURIComponent(orderId)}/proof`, f);
+  },
+  ownProof: (orderId: string) => fetchBlob(`/billing/payments/${encodeURIComponent(orderId)}/proof`),
+  cancelPayment: (orderId: string) => call<{ ok: boolean }>(`/billing/payments/${encodeURIComponent(orderId)}/cancel`, { method: 'POST' }),
+  startTrial: () => call<{ plan: string; planUntil: string; trial: boolean }>('/billing/trial', { method: 'POST' }),
 
-  // ─── Integrasi WhatsApp ───
-  sendWhatsApp: (body: { phone: string; message: string; template?: string }) =>
-    call<{ status: string; messageId: string; to: string; sentAt: string; message: string }>('/integrations/whatsapp/send', { method: 'POST', body }),
-  getWhatsAppStatus: () =>
-    call<{ connected: boolean; phoneNumber: string; accountName: string; quotaRemaining: number }>('/integrations/whatsapp/status'),
+  // ─── Integrasi ───
+  integrationStatus: () => call<IntegrationStatus>('/integrations/status'),
 
-  // ─── Asisten AI ───
+  sendWhatsApp: (body: { phone: string; message: string }) =>
+    call<{ status: 'accepted'; messageId: string; to: string; sentAt: string; message: string }>('/integrations/whatsapp/send', { method: 'POST', body }),
+
   aiBreakdown: (body: { title: string; description?: string }) =>
     call<AiBreakdownResult>('/integrations/ai/breakdown', { method: 'POST', body }),
-  aiSummarize: (body: { projectName: string; tasks: any[] }) =>
+  aiSummarize: (body: { projectId: string }) =>
     call<AiSummarizeResult>('/integrations/ai/summarize', { method: 'POST', body }),
   sendWebhook: (body: { webhookUrl: string; service: 'slack' | 'discord'; title?: string; message: string }) =>
     call<{ status: string; service: string; sentAt: string; message: string }>('/integrations/webhook/send', { method: 'POST', body }),
 
   // ─── Administrator Sistem (Superadmin) ───
   getSystemStats: () => call<SystemStats>('/system/stats'),
+  setWorkspacePlan: (id: number, plan: string, until: string | null) => call<{ id: number; plan: string; planUntil: string | null }>(`/system/workspaces/${id}/plan`, { method: 'PATCH', body: { plan, until } }),
+  plans: () => call<PlanCatalog>('/plans', { auth: false }),
+  adminPlans: () => call<{ config: PlanConfig; defaults: PlanConfig }>('/system/plans'),
+  saveAdminPlans: (config: PlanConfig) => call<{ config: PlanConfig }>('/system/plans', { method: 'PUT', body: config }),
+  // Pembayaran paket (superadmin)
+  paymentSettings: () => call<PaymentSettings>('/system/payment-settings'),
+  savePaymentSettings: (b: { accounts: Omit<BankAccount, 'id'>[]; qrisName: string; instructions: string; uniqueCode: boolean }) =>
+    call<PaymentSettings>('/system/payment-settings', { method: 'PUT', body: b }),
+  uploadQris: (file: File) => { const f = new FormData(); f.set('qris', file); return callForm<PaymentSettings>('/system/payment-settings/qris', f, 'PUT'); },
+  deleteQris: () => call<PaymentSettings>('/system/payment-settings/qris', { method: 'DELETE' }),
+  adminPayments: (f: PaymentFilter) => call<AdminPaymentList>(`/system/payments${qs(f)}`),
+  adminProof: (id: number) => fetchBlob(`/system/payments/${id}/proof`),
+  approvePayment: (id: number, note?: string) => call<{ ok: boolean; item: AdminPayment }>(`/system/payments/${id}/approve`, { method: 'POST', body: { note } }),
+  rejectPayment: (id: number, note: string) => call<{ ok: boolean; item: AdminPayment }>(`/system/payments/${id}/reject`, { method: 'POST', body: { note } }),
+  exportPayments: (f: PaymentFilter, format: 'csv' | 'xlsx') => fetchBlob(`/system/payments/export${qs({ ...f, page: undefined, pageSize: undefined }, { format })}`),
   getSystemWorkspaces: () => call<{ workspaces: SystemWorkspace[] }>('/system/workspaces'),
   getSystemUsers: () => call<{ users: SystemUser[] }>('/system/users'),
   deleteSystemUser: (id: number) => call<{ message: string }>(`/system/users/${id}`, { method: 'DELETE' }),
@@ -176,6 +329,7 @@ export interface SystemStats {
   nodeVersion: string;
   memoryUsageMB: number;
   database: string;
+  dbLatencyMs: number;
   websocket: string;
   timestamp: string;
 }
@@ -183,6 +337,8 @@ export interface SystemStats {
 export interface SystemWorkspace {
   id: number;
   name: string;
+  plan: 'gratis' | 'pro' | 'bisnis' | 'enterprise';
+  planUntil: string | null;
   ownerName: string;
   ownerEmail: string;
   memberCount: number;

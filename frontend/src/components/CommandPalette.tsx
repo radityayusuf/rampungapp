@@ -12,12 +12,10 @@ import {
   UserCheck,
   Users,
   Wallet,
-  Zap,
+  
 } from 'lucide-react';
 import { useApp } from '../store/AppContext';
 import { go, href } from '../store/router';
-import { formatTaskKey } from '../lib/format';
-import { STATUS } from '../lib/meta';
 
 interface PaletteItem {
   id: string;
@@ -43,6 +41,7 @@ export const CommandPalette: React.FC = () => {
     openCreateTask,
     checkIn,
     notify,
+    taskKey,
   } = useApp();
 
   const [q, setQ] = useState('');
@@ -143,7 +142,7 @@ export const CommandPalette: React.FC = () => {
         id: 'act-finance-invoice',
         category: 'AKSI CEPAT',
         title: 'Keuangan: Buat Tagihan / Invoice',
-        subtitle: 'Kelola pembayaran QRIS dan tagihan klien',
+        subtitle: 'Kelola invoice dan tagihan klien',
         icon: <Wallet size={16} className="text-violet-600" />,
         onSelect: () => go(href.keuangan),
       },
@@ -196,8 +195,7 @@ export const CommandPalette: React.FC = () => {
     // 2. Tiket & Tugas Jira
     const matchedTasks = tasks
       .filter((t) => {
-        const p = projects.find((x) => x.id === t.projectId);
-        const key = formatTaskKey(t.id, p?.shortName);
+        const key = taskKey(t.id);
         return (
           t.title.toLowerCase().includes(query) ||
           key.toLowerCase().includes(query) ||
@@ -208,8 +206,7 @@ export const CommandPalette: React.FC = () => {
       .slice(0, query ? 8 : 4)
       .map((t) => {
         const p = projects.find((x) => x.id === t.projectId);
-        const key = formatTaskKey(t.id, p?.shortName);
-        const st = STATUS[t.status];
+        const key = taskKey(t.id);
         return {
           id: `task-${t.id}`,
           category: 'TIKET & TUGAS (JIRA)' as const,
@@ -274,6 +271,7 @@ export const CommandPalette: React.FC = () => {
 
     return result;
   }, [
+    taskKey,
     isOpen,
     q,
     tasks,

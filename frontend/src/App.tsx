@@ -2,6 +2,8 @@ import React, { Suspense, lazy, useEffect } from 'react';
 import { AppShell } from './components/AppShell';
 import { GlobalModals } from './components/Modals';
 import { Toasts } from './components/ui';
+// Komponen halaman punya props berbeda-beda, jadi tipe props di sini sengaja longgar.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const lazyPage = <K extends string>(load: () => Promise<Record<K, React.ComponentType<any>>>, key: K) =>
   lazy(() => load().then((m) => ({ default: m[key] })));
 
@@ -22,12 +24,12 @@ const IntegrationsPage = lazyPage(() => import('./pages/IntegrationsPage'), 'Int
 const PortalPage = lazyPage(() => import('./pages/PortalPage'), 'PortalPage');
 const ForgotPage = lazyPage(() => import('./pages/PasswordPages'), 'ForgotPage');
 const ResetPage = lazyPage(() => import('./pages/PasswordPages'), 'ResetPage');
-const SystemAdminPage = lazyPage(() => import('./pages/SystemAdminPage'), 'SystemAdminPage');
+const AdminConsole = lazyPage(() => import('./pages/AdminConsole'), 'AdminConsole');
 
 const TITLES: Record<string, string> = {
   landing: 'Dari Ide Sampai Rampung', login: 'Masuk', gabung: 'Gabung ke tim', lupa: 'Lupa kata sandi', reset: 'Kata sandi baru', portal: 'Portal klien',
   beranda: 'Beranda', 'tugas-saya': 'Tugas Saya', inbox: 'Inbox', dashboard: 'Dashboard', proyek: 'Proyek', tugas: 'Tugas', time: 'Time Tracking',
-  crm: 'CRM Klien', keuangan: 'Keuangan', sdm: 'SDM', pengaturan: 'Pengaturan', integrasi: 'Integrasi', 'admin-sistem': 'Administrator Sistem', notfound: 'Halaman tidak ditemukan',
+  crm: 'CRM Klien', keuangan: 'Keuangan', sdm: 'SDM', pengaturan: 'Pengaturan', integrasi: 'Integrasi', admin: 'Panel Superadmin', notfound: 'Halaman tidak ditemukan',
 };
 
 const Loading: React.FC = () => <div className="flex min-h-[40vh] items-center justify-center text-sm text-arang-muted" role="status">Memuat...</div>;
@@ -46,14 +48,16 @@ import { go, href, useRoute } from './store/router';
 
 export const App: React.FC = () => {
   const route = useRoute();
-  const { loggedIn, booting } = useApp();
+  const { loggedIn, booting, account } = useApp();
+  const isSuper = account?.is_superadmin === true;
   const isPublic = route.page === 'landing' || route.page === 'login' || route.page === 'gabung' || route.page === 'portal' || route.page === 'lupa' || route.page === 'reset';
 
   useEffect(() => {
     if (booting) return;
     if (!loggedIn && !isPublic) go(href.masuk);
-    if (loggedIn && (route.page === 'login' || route.page === 'gabung')) go(href.beranda);
-  }, [loggedIn, booting, isPublic, route.page]);
+    // Superadmin mendarat di panelnya sendiri; pengguna biasa di workspace.
+    if (loggedIn && (route.page === 'login' || route.page === 'gabung')) go(isSuper ? href.admin() : href.beranda);
+  }, [loggedIn, booting, isPublic, route.page, isSuper]);
 
   useEffect(() => {
     document.title = `${TITLES[route.page] ?? 'Rampung'} · Rampung`;
@@ -70,6 +74,9 @@ export const App: React.FC = () => {
     case 'portal': return <Suspense fallback={<Loading />}><PortalPage token={route.token} /></Suspense>;
     case 'lupa': return <Suspense fallback={<Loading />}><ForgotPage /></Suspense>;
     case 'reset': return <Suspense fallback={<Loading />}><ResetPage token={route.token} email={route.email} /><Toasts /></Suspense>;
+    case 'admin':
+      // Panel Superadmin berdiri sendiri: tidak memakai kerangka workspace.
+      return loggedIn ? <Suspense fallback={<Loading />}><AdminConsole section={route.section} /><Toasts /></Suspense> : null;
     case 'beranda': body = <HomePage />; break;
     case 'tugas-saya': body = <MyTasksPage />; break;
     case 'inbox': body = <InboxPage />; break;
@@ -82,7 +89,6 @@ export const App: React.FC = () => {
     case 'sdm': body = <SdmPage />; break;
     case 'pengaturan': body = <SettingsPage />; break;
     case 'integrasi': body = <IntegrationsPage />; break;
-    case 'admin-sistem': body = <SystemAdminPage />; break;
   }
   if (!loggedIn) return null;
 

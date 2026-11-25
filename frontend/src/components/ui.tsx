@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef } from 'react';
-import { CheckCircle2, Info, MessageCircle, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, CheckCircle2, Equal, Info, MessageCircle, X } from 'lucide-react';
 import { useApp } from '../store/AppContext';
 import type { Priority, TaskStatus } from '../types';
 import { PRIORITY, STATUS, labelColors } from '../lib/meta';
@@ -45,12 +45,35 @@ export const LabelPill: React.FC<{ label: string }> = ({ label }) => {
 
 export const StatusPill: React.FC<{ status: TaskStatus }> = ({ status }) => {
   const s = STATUS[status];
-  return <Pill bg={s.bg} fg={s.fg} className="font-bold">{s.label}</Pill>;
+  return <span className="inline-flex items-center whitespace-nowrap rounded-[4px] px-1.5 py-[2px] text-[11px] font-bold uppercase tracking-[0.04em]" style={{ background: s.bg, color: s.fg }}>{s.label}</span>;
 };
 
 export const PriorityText: React.FC<{ priority: Priority }> = ({ priority }) => (
   <span className="text-xs font-semibold" style={{ color: PRIORITY[priority].fg }}>{PRIORITY[priority].label}</span>
 );
+
+/** Ikon jenis tiket ala Jira: kotak tosca bercentang (tugas). */
+export const IssueTypeIcon: React.FC<{ size?: number; milestone?: boolean }> = ({ size = 16, milestone }) => (
+  <span
+    title={milestone ? 'Milestone' : 'Tugas'}
+    aria-label={milestone ? 'Milestone' : 'Tugas'}
+    className="inline-flex shrink-0 items-center justify-center rounded"
+    style={{ width: size, height: size, background: milestone ? '#F2B33D' : '#0F9D8A' }}
+  >
+    <Check size={size - 5} color={milestone ? '#3D2A00' : '#fff'} strokeWidth={3.5} />
+  </span>
+);
+
+/** Ikon prioritas ala Jira: panah merah (tinggi), sama dengan kuning (sedang), panah biru (rendah). */
+export const PriorityIcon: React.FC<{ priority: Priority; size?: number }> = ({ priority, size = 15 }) => {
+  const label = PRIORITY[priority].label;
+  const common = { size, strokeWidth: 3, 'aria-label': `Prioritas ${label}` } as const;
+  return (
+    <span title={`Prioritas ${label}`} className="inline-flex shrink-0 items-center">
+      {priority === 'high' ? <ArrowUp {...common} color="#C2362B" /> : priority === 'medium' ? <Equal {...common} color="#D98A0B" /> : <ArrowDown {...common} color="#2F6FB8" />}
+    </span>
+  );
+};
 
 export const Progress: React.FC<{ value: number; color?: string; h?: number }> = ({ value, color = '#0F9D8A', h = 6 }) => (
   <div className="w-full overflow-hidden bg-line-soft" style={{ height: h, borderRadius: h }} role="progressbar" aria-valuenow={Math.round(value)} aria-valuemin={0} aria-valuemax={100}>
@@ -59,9 +82,9 @@ export const Progress: React.FC<{ value: number; color?: string; h?: number }> =
 );
 
 export const Stat: React.FC<{ label: string; value: React.ReactNode; note?: React.ReactNode; tone?: string }> = ({ label, value, note, tone }) => (
-  <div className="card flex flex-col gap-1.5 p-[18px]">
+  <div className="card flex flex-col gap-1 p-4">
     <span className="text-[13px] text-arang-muted">{label}</span>
-    <span className="text-[28px] font-extrabold leading-tight" style={{ color: tone }}>{value}</span>
+    <span className="text-[26px] font-bold leading-tight tracking-tight" style={{ color: tone }}>{value}</span>
     {note && <span className="text-xs text-arang-muted">{note}</span>}
   </div>
 );
@@ -77,14 +100,14 @@ export const PageHeader: React.FC<{ eyebrow?: React.ReactNode; title: React.Reac
 );
 
 export const Segmented: React.FC<{ value: string; onChange: (v: string) => void; options: { value: string; label: string }[]; label: string }> = ({ value, onChange, options, label }) => (
-  <div role="group" aria-label={label} className="inline-flex max-w-full gap-1 overflow-x-auto rounded-[10px] bg-canvas-seg p-1 text-sm">
+  <div role="group" aria-label={label} className="inline-flex max-w-full gap-0.5 overflow-x-auto rounded-lg bg-canvas-seg p-0.5 text-[13px]">
     {options.map((o) => (
       <button
         key={o.value}
         type="button"
         aria-pressed={o.value === value}
         onClick={() => onChange(o.value)}
-        className={`h-9 shrink-0 cursor-pointer rounded-lg border-0 px-3.5 ${o.value === value ? 'bg-white font-bold text-arang' : 'bg-transparent text-arang-body'}`}
+        className={`h-8 shrink-0 cursor-pointer rounded-md border-0 px-3 ${o.value === value ? 'bg-white font-semibold text-arang shadow-xs' : 'bg-transparent text-arang-body hover:text-arang'}`}
       >
         {o.label}
       </button>
@@ -94,7 +117,7 @@ export const Segmented: React.FC<{ value: string; onChange: (v: string) => void;
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export const Modal: React.FC<{ open: boolean; onClose: () => void; title: string; children: React.ReactNode; wide?: boolean; footer?: React.ReactNode }> = ({ open, onClose, title, children, wide, footer }) => {
+export const Modal: React.FC<{ open: boolean; onClose: () => void; title: string; children: React.ReactNode; wide?: boolean; size?: 'xl'; footer?: React.ReactNode }> = ({ open, onClose, title, children, wide, size, footer }) => {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
 
@@ -128,9 +151,9 @@ export const Modal: React.FC<{ open: boolean; onClose: () => void; title: string
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-arang/50 p-0 sm:items-center sm:p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} className={`flex max-h-[92vh] w-full flex-col rounded-t-2xl bg-white shadow-2xl outline-none sm:rounded-2xl ${wide ? 'sm:max-w-3xl' : 'sm:max-w-lg'}`}>
+      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} className={`flex max-h-[92vh] w-full flex-col rounded-t-2xl bg-white shadow-pop outline-none sm:rounded-xl ${size === 'xl' ? 'sm:max-w-[1120px]' : wide ? 'sm:max-w-3xl' : 'sm:max-w-lg'}`}>
         <div className="flex items-center justify-between border-b border-line-soft px-6 py-4">
-          <h2 id={titleId} className="m-0 text-lg font-extrabold">{title}</h2>
+          <h2 id={titleId} className="m-0 text-[17px] font-bold">{title}</h2>
           <button type="button" aria-label="Tutup" onClick={onClose} className="btn-icon border-0"><X size={18} /></button>
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>

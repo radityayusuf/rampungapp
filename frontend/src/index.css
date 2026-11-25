@@ -7,8 +7,14 @@
     -webkit-text-size-adjust: 100%;
   }
   body {
-    @apply bg-canvas text-arang font-sans antialiased;
+    @apply bg-canvas font-sans text-[14px] leading-[1.5] text-arang antialiased;
     margin: 0;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.01em;
   }
   a {
     @apply text-brand no-underline;
@@ -23,71 +29,71 @@
     font: inherit;
   }
   :focus-visible {
-    outline: 2px solid #0b7a6b;
+    outline: 2px solid #0f9d8a;
     outline-offset: 2px;
   }
 }
 
 @layer components {
   .btn {
-    @apply inline-flex h-11 shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-[10px] px-4 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3.5 text-[13.5px] font-semibold transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50 max-sm:h-10;
   }
   .btn-sm {
-    @apply h-10 rounded-lg px-3.5 font-normal;
+    @apply h-8 rounded-lg px-3 text-[13px] max-sm:h-9;
   }
   .btn-primary {
-    @apply border-0 bg-brand font-bold text-white hover:bg-brand-hover;
+    @apply border-0 bg-brand text-white shadow-[0_1px_2px_rgba(11,95,84,.35)] hover:bg-brand-hover;
   }
   .btn-primary:hover {
     color: #fff;
   }
   .btn-outline {
-    @apply border border-line bg-white text-arang hover:bg-canvas-subtle;
+    @apply border border-line bg-white text-arang shadow-xs hover:border-line-strong hover:bg-canvas-subtle;
   }
   .btn-outline:hover {
     color: #1f2933;
   }
   .btn-kunyit {
-    @apply border-0 bg-kunyit font-bold text-kunyit-ink hover:brightness-95;
+    @apply border-0 bg-kunyit text-kunyit-ink shadow-xs hover:brightness-95;
   }
   .btn-ghost {
-    @apply border-0 bg-transparent text-arang-muted hover:bg-canvas;
+    @apply border-0 bg-transparent text-arang-muted hover:bg-line-soft;
   }
   .btn-icon {
-    @apply inline-flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-line bg-white text-arang hover:bg-canvas-subtle;
+    @apply inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-line bg-white text-arang transition-colors hover:bg-canvas-subtle;
   }
 
   .card {
-    @apply rounded-card border border-line bg-white;
+    @apply rounded-xl border border-line bg-white shadow-card;
   }
   .card-title {
-    @apply m-0 text-base font-bold;
+    @apply m-0 text-[15px] font-bold;
   }
 
   .field-label {
-    @apply text-sm font-semibold text-arang;
+    @apply text-[13px] font-semibold text-arang;
   }
   .input {
-    @apply h-12 w-full rounded-[10px] border border-line-strong bg-white px-3.5 text-[15px] text-arang outline-none placeholder:text-arang-faint focus:border-brand;
+    @apply h-10 w-full rounded-lg border border-line-strong bg-white px-3 text-[14px] text-arang outline-none transition-shadow placeholder:text-arang-faint focus:border-brand-bright focus:shadow-[0_0_0_3px_rgba(15,157,138,.16)];
   }
   .input-sm {
-    @apply h-10 rounded-lg border-line px-3 text-sm;
+    @apply h-8 rounded-lg border-line px-2.5 text-[13px];
   }
   textarea.input {
-    @apply h-auto py-3 leading-relaxed;
+    @apply h-auto py-2.5 leading-relaxed;
   }
 
   .pill {
-    @apply inline-flex items-center whitespace-nowrap rounded-full px-2 py-[3px] text-xs font-semibold;
+    @apply inline-flex items-center whitespace-nowrap rounded-md px-1.5 py-[2px] text-[11.5px] font-semibold;
   }
   .section-label {
-    @apply px-3 pb-1.5 text-xs font-bold tracking-[0.6px] text-arang-muted;
+    @apply px-3 pb-1 pt-1 text-[11px] font-bold uppercase tracking-[0.08em] text-arang-muted;
   }
   .eyebrow {
     @apply text-[13px] text-arang-muted;
   }
   .page-title {
-    @apply m-0 text-[26px] font-extrabold tracking-[-0.4px];
+    @apply m-0 text-[22px] font-bold tracking-[-0.3px];
   }
   .sr-only {
     position: absolute;
