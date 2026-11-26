@@ -1,3 +1,4 @@
+import { bumpRev } from '../services/rev';
 import { Response } from 'express';
 import { prisma } from '../db';
 import { AuthRequest } from '../types';
@@ -153,7 +154,8 @@ export async function updateSystemUserRole(req: AuthRequest, res: Response): Pro
     return;
   }
 
-  await prisma.users.update({ where: { id: target }, data: { role } });
+  const updated = await prisma.users.update({ where: { id: target }, data: { role } });
+  if (updated.workspace_id) await bumpRev(updated.workspace_id);
 
   res.json({ message: 'Role pengguna berhasil diperbarui.', role });
 }

@@ -76,7 +76,22 @@ export function buildTaskKeys(tasks: { id: string; projectId: string; num?: numb
     const pre = prefix.get(pid) ?? 'TGS';
     const legacy = list.filter((t) => !t.num).sort((x, y) => x.createdAt.localeCompare(y.createdAt) || x.id.localeCompare(y.id));
     legacy.forEach((t, i) => out.set(t.id, `${pre}-${i + 1}`));
-    for (const t of list) if (t.num) out.set(t.id, `${pre}-${t.num}`);
+    // Dua tugas bisa telanjur memakai nomor yang sama (data lama, atau dibuat bersamaan): yang terlebih dulu memegang
+    // nomornya, sisanya mengisi nomor kosong terkecil sehingga kunci selalu unik dan tidak berubah saat tugas lain bertambah.
+    const used = new Set(legacy.map((_, i) => i + 1));
+    const numbered = list.filter((t) => t.num).sort((x, y) => x.createdAt.localeCompare(y.createdAt) || x.id.localeCompare(y.id));
+    const clash = numbered.filter((t) => {
+      if (used.has(t.num!)) return true;
+      used.add(t.num!);
+      out.set(t.id, `${pre}-${t.num}`);
+      return false;
+    });
+    let free = 1;
+    for (const t of clash) {
+      while (used.has(free)) free++;
+      used.add(free);
+      out.set(t.id, `${pre}-${free}`);
+    }
   }
   return out;
 }
@@ -84,8 +99,8 @@ export function buildTaskKeys(tasks: { id: string; projectId: string; num?: numb
 /** Nomor tiket berikutnya untuk satu proyek. */
 export const nextTaskNum = (tasks: { projectId: string; num?: number }[], projectId: string): number => {
   const mine = tasks.filter((t) => t.projectId === projectId);
-  const legacy = mine.filter((t) => !t.num).length;
-  return Math.max(legacy, ...mine.map((t) => t.num ?? 0), 0) + 1;
+  // Jumlah tugas ikut dihitung: nomor kosong di bawahnya mungkin dipakai tugas bernomor kembar.
+  return Math.max(mine.length, ...mine.map((t) => t.num ?? 0), 0) + 1;
 };
 
 /** Label tenggat: "Terlambat · 6 Nov", "Hari ini", "Besok", "9 Nov". */

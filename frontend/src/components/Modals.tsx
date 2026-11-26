@@ -136,7 +136,7 @@ const CreateTaskDialog: React.FC<{ opts: { projectId?: string; status?: TaskStat
 };
 
 const CreateProject: React.FC = () => {
-  const { modal, setModal, createProject, spaces, clients, createSpace, me } = useApp();
+  const { modal, setModal, createProject, spaces, clients, createSpace, me, canManage } = useApp();
   const [f, setF] = useState({ name: '', spaceId: '', clientId: '', dueDate: relDay(30), budget: '', newSpace: '', template: 'kosong' });
   const close = () => setModal(null);
   const open = modal === 'project';
@@ -161,7 +161,7 @@ const CreateProject: React.FC = () => {
           <Field label="Tenggat" htmlFor="pd"><input id="pd" type="date" className="input" value={f.dueDate} onChange={(e) => e.target.value && setF({ ...f, dueDate: e.target.value })} /></Field>
         </div>
         <Field label="Template" htmlFor="ptpl" hint={TEMPLATES.find((t) => t.key === f.template)?.desc}><select id="ptpl" className="input" value={f.template} onChange={(e) => setF({ ...f, template: e.target.value })}>{TEMPLATES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}</select></Field>
-        <Field label="Anggaran (juta rupiah, opsional)" htmlFor="pb"><input id="pb" type="number" min={0} className="input" value={f.budget} onChange={(e) => setF({ ...f, budget: e.target.value })} /></Field>
+        {canManage && <Field label="Anggaran (juta rupiah, opsional)" htmlFor="pb"><input id="pb" type="number" min={0} className="input" value={f.budget} onChange={(e) => setF({ ...f, budget: e.target.value })} /></Field>}
       </div>
     </Modal>
   );
@@ -184,25 +184,28 @@ const Modules: React.FC = () => {
 };
 
 const Automation: React.FC = () => {
-  const { modal, setModal, automations, addAutomation, toggleAutomation, deleteAutomation } = useApp();
+  const { modal, setModal, automations, addAutomation, toggleAutomation, deleteAutomation, integrations } = useApp();
   const [f, setF] = useState({ trigger: 'status_changed' as AutomationTrigger, triggerValue: 'done' as TaskStatus, action: 'notify_assignee' as AutomationAction });
   const actionLabel: Record<AutomationAction, string> = { notify_assignee: 'kabari penanggung jawab', notify_whatsapp: 'kirim pengingat WhatsApp', notify_client: 'kabari klien lewat WhatsApp', set_priority_high: 'naikkan prioritas ke Tinggi' };
+  const isWa = (a: AutomationAction) => a === 'notify_whatsapp' || a === 'notify_client';
+  // "Tenggat besok" dijalankan server dan belum mengirim WhatsApp.
+  const waOff = (t: AutomationTrigger) => !integrations?.whatsapp.configured || t === 'due_soon';
   const trigLabel = (t: AutomationTrigger, v?: TaskStatus) => (t === 'status_changed' ? `Status berubah ke ${STATUS[v ?? 'done'].label}` : t === 'task_created' ? 'Tugas dibuat' : 'Tenggat besok');
   return (
     <Modal open={modal === 'automation'} onClose={() => setModal(null)} title="Otomasi" wide>
       <div className="flex flex-col gap-5">
         <div className="flex flex-col gap-2.5">
           {automations.map((a) => (
-            <div key={a.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line p-3.5"><div className="flex min-w-0 flex-col gap-0.5"><span className="text-sm font-bold">{a.name}</span><span className="text-xs text-arang-muted">Jalan {a.runCount} kali</span></div>
+            <div key={a.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line p-3.5"><div className="flex min-w-0 flex-col gap-0.5"><span className="text-sm font-bold">{a.name}</span><span className="text-xs text-arang-muted">Jalan {a.runCount} kali{isWa(a.action) && waOff(a.trigger) ? ' · dilewati selama WhatsApp belum aktif' : ''}</span></div>
               <div className="flex items-center gap-2"><button type="button" role="switch" aria-checked={a.isActive} aria-label={a.name} onClick={() => toggleAutomation(a.id)} className="relative h-7 w-12 cursor-pointer rounded-full border-0" style={{ background: a.isActive ? '#0B7A6B' : '#C9CEC8' }}><span className="absolute top-1 h-5 w-5 rounded-full bg-white transition-all" style={{ left: a.isActive ? 24 : 4 }} /></button><button type="button" aria-label="Hapus aturan" className="btn-icon" onClick={() => deleteAutomation(a.id)}><Trash2 size={15} /></button></div></div>
           ))}
           {!automations.length && <span className="text-sm text-arang-muted">Belum ada aturan.</span>}
         </div>
         <div className="flex flex-col gap-3 rounded-xl bg-canvas p-4"><h3 className="m-0 text-sm font-bold">Aturan baru: jika–maka</h3>
           <div className="grid gap-3 sm:grid-cols-3">
-            <Field label="Jika" htmlFor="at"><select id="at" className="input input-sm" value={f.trigger} onChange={(e) => setF({ ...f, trigger: e.target.value as AutomationTrigger })}><option value="status_changed">Status berubah</option><option value="task_created">Tugas dibuat</option><option value="due_soon">Tenggat besok</option></select></Field>
+            <Field label="Jika" htmlFor="at"><select id="at" className="input input-sm" value={f.trigger} onChange={(e) => { const trigger = e.target.value as AutomationTrigger; setF({ ...f, trigger, action: isWa(f.action) && waOff(trigger) ? 'notify_assignee' : f.action }); }}><option value="status_changed">Status berubah</option><option value="task_created">Tugas dibuat</option><option value="due_soon">Tenggat besok</option></select></Field>
             <Field label="Ke status" htmlFor="av"><select id="av" className="input input-sm" disabled={f.trigger !== 'status_changed'} value={f.triggerValue} onChange={(e) => setF({ ...f, triggerValue: e.target.value as TaskStatus })}>{STATUS_ORDER.map((s) => <option key={s} value={s}>{STATUS[s].label}</option>)}</select></Field>
-            <Field label="Maka" htmlFor="aa"><select id="aa" className="input input-sm" value={f.action} onChange={(e) => setF({ ...f, action: e.target.value as AutomationAction })}>{(Object.keys(actionLabel) as AutomationAction[]).map((k) => <option key={k} value={k}>{actionLabel[k]}</option>)}</select></Field>
+            <Field label="Maka" htmlFor="aa"><select id="aa" className="input input-sm" value={f.action} onChange={(e) => setF({ ...f, action: e.target.value as AutomationAction })}>{(Object.keys(actionLabel) as AutomationAction[]).filter((k) => !isWa(k) || !waOff(f.trigger)).map((k) => <option key={k} value={k}>{actionLabel[k]}</option>)}</select></Field>
           </div>
           <button type="button" className="btn btn-primary self-start" onClick={() => addAutomation({ name: `${trigLabel(f.trigger, f.triggerValue)} → ${actionLabel[f.action]}`, trigger: f.trigger, triggerValue: f.trigger === 'status_changed' ? f.triggerValue : undefined, action: f.action })}>Simpan aturan</button>
         </div>

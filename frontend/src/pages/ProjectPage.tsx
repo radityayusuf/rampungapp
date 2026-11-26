@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { Calendar as CalendarIcon, CheckSquare, ChevronLeft, ChevronRight, Download, MessageSquare, Paperclip, Plus, Search, Sparkles, X, Zap } from 'lucide-react';
+import { Calendar as CalendarIcon, CheckSquare, ChevronLeft, ChevronRight, Download, MessageSquare, Paperclip, Plus, Search, Sparkles, Trash2, X, Zap } from 'lucide-react';
 import { useApp } from '../store/AppContext';
 import { useIsMobile } from '../lib/useMedia';
-import { href } from '../store/router';
+import { go, href } from '../store/router';
 import type { ProjectView, Task, TaskStatus } from '../types';
 import { Avatar, Empty, IssueTypeIcon, LabelPill, Modal, Pill, PriorityIcon, PriorityText, Progress, StatusPill } from '../components/ui';
 import { PROJECT_VIEWS } from '../components/AppShell';
@@ -432,9 +432,45 @@ const Docs: React.FC<{ projectId: string }> = ({ projectId }) => {
   );
 };
 
+/* ---------------- Hapus proyek ---------------- */
+const DeleteProjectDialog: React.FC<{ projectId: string; onClose: () => void }> = ({ projectId, onClose }) => {
+  const { projects, tasks, comments, deleteProject } = useApp();
+  const [text, setText] = useState('');
+  const p = projects.find((x) => x.id === projectId);
+  if (!p) return null;
+  const own = tasks.filter((t) => t.projectId === projectId);
+  const ids = new Set(own.map((t) => t.id));
+  const losses: [number, string][] = [
+    [own.length, 'tugas'],
+    [comments.filter((c) => ids.has(c.taskId)).length, 'komentar'],
+    [own.reduce((n, t) => n + t.attachments.length, 0), 'lampiran'],
+  ];
+  const match = text.trim() === p.name.trim();
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (match && deleteProject(p.id)) go(href.beranda);
+  };
+  return (
+    <Modal open onClose={onClose} title="Hapus proyek" footer={<><button type="button" className="btn btn-outline" onClick={onClose}>Batal</button><button type="submit" form="hapus-proyek" disabled={!match} className="btn btn-danger">Hapus permanen</button></>}>
+      <form id="hapus-proyek" onSubmit={submit} className="flex flex-col gap-4 text-sm">
+        <p className="m-0 leading-relaxed text-arang-body">Proyek <strong className="text-arang">{p.name}</strong> akan dihapus untuk seluruh tim dan <strong className="text-arang">tidak bisa dikembalikan</strong>.</p>
+        <div className="grid grid-cols-3 gap-2">
+          {losses.map(([n, label]) => <div key={label} className="flex flex-col rounded-lg bg-danger-soft px-3 py-2.5"><span className="tabular text-lg font-bold text-danger">{n}</span><span className="text-xs text-arang-body">{label} dihapus</span></div>)}
+        </div>
+        <p className="m-0 text-[13px] leading-relaxed text-arang-muted">Dokumen proyek dan tautan portal kliennya ikut hilang. Catatan jam kerja, pengeluaran, dan invoice tetap tersimpan sebagai riwayat.</p>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="nama-hapus" className="text-[13px] font-semibold">Ketik <span className="select-all rounded bg-line-soft px-1.5 py-0.5">{p.name}</span> untuk melanjutkan</label>
+          <input id="nama-hapus" className="input" autoComplete="off" value={text} onChange={(e) => setText(e.target.value)} />
+        </div>
+      </form>
+    </Modal>
+  );
+};
+
 /* ---------------- Halaman ---------------- */
 export const ProjectPage: React.FC<{ projectId: string; view: ProjectView }> = ({ projectId, view }) => {
-  const { projects, tasks, users, me, openCreateTask, setModal, workspace, automations, clients, notify, mode, taskKey } = useApp();
+  const { projects, tasks, users, me, openCreateTask, setModal, workspace, automations, clients, notify, mode, taskKey, canManage } = useApp();
+  const [removing, setRemoving] = useState(false);
   const [q, setQ] = useState('');
   const [who, setWho] = useState('all');
   const [prio, setPrio] = useState('all');
@@ -526,6 +562,7 @@ export const ProjectPage: React.FC<{ projectId: string; view: ProjectView }> = (
             <button type="button" className="btn btn-outline btn-sm" onClick={handleExportCsv} title="Ekspor daftar tugas ke CSV/Excel"><Download size={14} />Ekspor CSV</button>
             <button type="button" className="btn btn-outline btn-sm" onClick={handleAiSummary}><Sparkles size={14} />Ringkas AI</button>
             {workspace.plan !== 'gratis' && <button type="button" className="btn btn-outline btn-sm" onClick={() => setModal('automation')}><Zap size={14} />Otomasi · {automations.filter((a) => a.isActive).length}</button>}
+            {canManage && <button type="button" className="btn btn-outline btn-sm text-danger" onClick={() => setRemoving(true)}><Trash2 size={14} />Hapus proyek</button>}
             <button type="button" className="btn btn-primary btn-sm" onClick={() => openCreateTask({ projectId })}><Plus size={15} />Tugas baru</button>
           </div>
         </div>
@@ -583,6 +620,8 @@ export const ProjectPage: React.FC<{ projectId: string; view: ProjectView }> = (
       {view === 'timeline' && <Timeline tasks={list} />}
       {view === 'tabel' && <TableView tasks={list} />}
       {view === 'docs' && <Docs key={p.id} projectId={p.id} />}
+
+      {removing && <DeleteProjectDialog projectId={p.id} onClose={() => setRemoving(false)} />}
 
       <Modal open={aiModal} onClose={() => setAiModal(false)} title={`Analisis & Ringkasan AI: ${p.name}`} footer={<button type="button" className="btn btn-primary" onClick={() => setAiModal(false)}>Tutup</button>}>
         {aiLoading ? (

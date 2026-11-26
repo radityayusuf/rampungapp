@@ -101,6 +101,7 @@ export interface Workspace {
   /** Diisi server: paket berbayar berlaku sampai (null = Gratis/tanpa batas). */
   planUntil?: string | null;
   enabledModules: Record<ModuleKey, boolean>;
+  company?: CompanyProfile;
   whatsappNumber?: string;
   whatsappConnected: boolean;
   hourlyRate: number;
@@ -154,7 +155,26 @@ export interface Expense {
 
 export interface InvoiceItem {
   description: string;
+  /** Jumlah × harga satuan; invoice lama hanya punya amount. */
+  qty?: number;
+  price?: number;
   amount: number;
+}
+
+/** Identitas penerbit invoice, diisi pemilik/admin di halaman Keuangan. */
+export interface CompanyProfile {
+  name: string;
+  address: string;
+  email: string;
+  phone: string;
+  npwp: string;
+  bankName: string;
+  bankNumber: string;
+  bankHolder: string;
+  /** Awalan nomor invoice, mis. INV. */
+  prefix: string;
+  /** Catatan kaki bawaan. */
+  note: string;
 }
 
 export interface Invoice {
@@ -165,8 +185,14 @@ export interface Invoice {
   items: InvoiceItem[];
   issueDate: string;
   dueDate: string;
-  status: 'unpaid' | 'paid';
+  status: 'unpaid' | 'paid' | 'void';
   paidAt?: string;
+  voidAt?: string;
+  /** PPN dalam persen. */
+  taxRate?: number;
+  note?: string;
+  /** Nama klien saat invoice diterbitkan, agar arsip tidak berubah bila data klien diubah. */
+  billTo?: { company: string; contact: string };
   /** qris = dibayar lewat Midtrans (diverifikasi server); manual = dikonfirmasi admin. */
   paymentMethod?: 'qris' | 'manual';
   paymentRef?: string;
@@ -179,16 +205,17 @@ export interface Attendance {
   checkIn: string;
   checkOut?: string;
   status: 'hadir' | 'terlambat' | 'izin' | 'cuti';
-  location: string;
+  location?: string;
 }
 
 export interface LeaveRequest {
   id: string;
   userId: string;
-  type: 'tahunan' | 'sakit' | 'khusus';
+  /** Jenis & alasan hanya dikirim server untuk cuti milik sendiri, atau ke pemilik/admin. */
+  type?: 'tahunan' | 'sakit' | 'khusus';
   startDate: string;
   endDate: string;
-  reason: string;
+  reason?: string;
   status: 'pending' | 'approved' | 'rejected';
 }
 

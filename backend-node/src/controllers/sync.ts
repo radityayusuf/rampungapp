@@ -12,64 +12,156 @@ export const COLLECTIONS = [
 
 export type CollectionName = typeof COLLECTIONS[number];
 
+/** Hanya pemilik/admin yang boleh mengubah. */
 const ADMIN_ONLY: string[] = ['workspace', 'automations', 'invoices', 'expenses'];
-const OWN_ONLY: string[] = ['timeEntries', 'attendances'];
+/** Catatan pribadi: anggota hanya boleh membuat, mengubah, dan menghapus miliknya sendiri. */
+const OWN_ONLY: string[] = ['timeEntries', 'attendances', 'comments', 'leaves'];
+/** Anggota boleh membuat & mengubah, tetapi tidak menghapus. required: kolom yang tidak boleh dikosongkan. */
+const NO_DELETE: Record<string, { required: string; label: string }> = {
+  projects: { required: 'name', label: 'proyek' },
+  spaces: { required: 'name', label: 'space' },
+  clients: { required: 'company', label: 'klien' },
+  deals: { required: 'clientId', label: 'deal' },
+};
+/** Tidak pernah dikirim ke anggota. */
+const FINANCE_ONLY: string[] = ['invoices', 'expenses'];
+const PROJECT_FINANCE = ['budget', 'spent'];
+const PROJECT_PORTAL = ['clientPortalEnabled', 'portalToken'];
+const LEAVE_PRIVATE = ['type', 'reason'];
 
-async function existingOwner(workspaceId: bigint, collection: string, rid: string): Promise<string | null> {
+const isManager = (user: any): boolean => user.role === 'owner' || user.role === 'admin' || user.role === 'superadmin';
+const filled = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
+
+const omit = (o: any, keys: string[]) => {
+  const copy = { ...o };
+  for (const k of keys) delete copy[k];
+  return copy;
+};
+
+async function existingRecord(workspaceId: bigint, collection: string, rid: string): Promise<{ rid: string; data: any } | null> {
   const row = await prisma.records.findUnique({
-    where: {
-      workspace_id_collection_rid: {
-        workspace_id: workspaceId,
-        collection,
-        rid,
-      },
-    },
+    where: { workspace_id_collection_rid: { workspace_id: workspaceId, collection, rid } },
   });
   if (!row) return null;
+  let data: any = {};
   try {
-    const parsed = JSON.parse(row.data);
-    return parsed.userId || null;
+    data = JSON.parse(row.data) ?? {};
   } catch {
-    return null;
+    // catatan rusak diperlakukan kosong
   }
+  return { rid: row.rid, data };
 }
 
-async function denied(user: any, changes: any[]): Promise<string | null> {
-  if (user.role === 'owner' || user.role === 'admin' || user.role === 'superadmin') {
-    return null;
+/** Bentuk catatan yang boleh dilihat pengguna ini; null bila tidak boleh melihatnya sama sekali. */
+function visible(user: any, collection: string, data: any): any | null {
+  if (isManager(user)) return data;
+  if (FINANCE_ONLY.includes(collection)) return null;
+  if (collection === 'projects') return omit(data, PROJECT_FINANCE);
+  if (collection === 'leaves' && data.userId !== `u${user.id}`) {
+    // Rekan cukup tahu siapa yang cuti dan kapan; jenis & alasannya pribadi.
+    return data.status === 'approved' ? omit(data, LEAVE_PRIVATE) : null;
   }
+  return data;
+}
 
+/** Alasan penolakan untuk anggota biasa, atau null bila boleh. Pemilik/admin/superadmin selalu boleh. */
+async function denied(user: any, changes: any[]): Promise<string | null> {
+  if (isManager(user)) return null;
+
+  const wsId = BigInt(user.workspace_id);
   const me = `u${user.id}`;
 
   for (const ch of changes) {
     const c = ch.c;
     const data = ch.data ?? null;
 
-    if (ADMIN_ONLY.includes(c)) {
-      return 'Hanya pemilik atau admin yang boleh mengubah data ini.';
-    }
+    if (ADMIN_ONLY.includes(c)) return 'Hanya pemilik atau admin yang boleh mengubah data ini.';
 
-    if (c === 'members' && ch.id !== me) {
-      return 'Anggota hanya boleh mengubah profilnya sendiri.';
-    }
+    if (c === 'members' && (ch.id !== me || data === null)) return 'Anggota hanya boleh mengubah profilnya sendiri.';
 
-    if (OWN_ONLY.includes(c) || c === 'leaves') {
-      // Pemilik catatan yang SUDAH ada menentukan boleh/tidaknya; data baru tidak boleh mengklaim milik orang lain,
-      // dan tidak boleh "mencuri" catatan orang lain dengan menulis userId miliknya sendiri.
-      const existing = await existingOwner(BigInt(user.workspace_id), c, ch.id);
-      if (existing !== null && existing !== me) {
-        return 'Anggota hanya boleh mengubah catatan miliknya sendiri.';
-      }
-      if (data !== null && data.userId !== me) {
+    // "Menghapus" dengan menimpa: id di dalam data diganti, atau id yang oleh database dianggap sama
+    // (kolom rid tidak membedakan huruf besar/kecil: "P1" menimpa "p1").
+    if (data !== null && data.id !== ch.id) return 'Data tidak valid: id tidak cocok.';
+    const old = await existingRecord(wsId, c, ch.id);
+    if (old && old.rid !== ch.id) return 'Data tidak valid: id sudah dipakai.';
+
+    if (OWN_ONLY.includes(c)) {
+      // Pemilik catatan yang SUDAH ada menentukan boleh/tidaknya; data baru tidak boleh mengklaim milik orang lain.
+      if ((old && old.data.userId !== me) || (data !== null && data.userId !== me)) {
         return 'Anggota hanya boleh mengubah catatan miliknya sendiri.';
       }
       if (c === 'leaves' && data !== null && (data.status || 'pending') !== 'pending') {
         return 'Persetujuan cuti hanya bisa dilakukan pemilik atau admin.';
       }
+      // Pengajuan yang sudah diputuskan tidak bisa diubah atau dihapus diam-diam oleh pengajunya.
+      if (c === 'leaves' && old && (old.data.status || 'pending') !== 'pending') {
+        return 'Cuti yang sudah diputuskan hanya bisa dibatalkan pemilik atau admin.';
+      }
+    }
+
+    const rule = NO_DELETE[c];
+    if (rule) {
+      if (data === null) return `Hanya pemilik atau admin yang boleh menghapus ${rule.label}.`;
+      if (!filled(data[rule.required])) return `Data ${rule.label} tidak lengkap.`;
+    }
+    if (c === 'projects' && old && data.status !== old.data.status) {
+      return 'Hanya pemilik atau admin yang boleh mengubah status proyek.';
+    }
+
+    if (c === 'tasks') {
+      if (data === null) {
+        if (old && old.data.createdBy !== me) return 'Anggota hanya boleh menghapus tugas buatannya sendiri.';
+        continue;
+      }
+      if (!filled(data.title)) return 'Data tugas tidak lengkap.';
+      // Pembuat tugas menentukan hak hapus, jadi tidak boleh dipalsukan atau dialihkan.
+      if (data.createdBy !== (old ? old.data.createdBy : me)) {
+        return old ? 'Pembuat tugas tidak bisa diubah.' : 'Tugas ini sudah dihapus atau pembuatnya tidak sesuai.';
+      }
+      // Memindahkan tugas ke proyek yang tidak ada sama dengan menghilangkannya.
+      if (old && data.projectId !== old.data.projectId) {
+        const inPush = changes.some((x) => x.c === 'projects' && x.id === data.projectId && x.data);
+        if (!filled(data.projectId) || (!inPush && (await existingRecord(wsId, 'projects', data.projectId))?.rid !== data.projectId)) {
+          return 'Proyek tujuan tugas tidak ditemukan.';
+        }
+      }
     }
   }
 
   return null;
+}
+
+/**
+ * Kolom yang tidak dilihat atau tidak boleh diubah pengirim dipulihkan dari catatan server, sehingga menyimpan
+ * perubahan lain (mis. dokumen proyek) tidak menghapusnya.
+ */
+async function restoreProtected(user: any, changes: any[]): Promise<void> {
+  const wsId = BigInt(user.workspace_id);
+  const manager = isManager(user);
+  for (const ch of changes) {
+    if (!ch.data) continue;
+
+    if (ch.c === 'members' && !manager) ch.data = { ...ch.data, role: user.role };
+
+    const hidden = ch.c === 'projects' ? PROJECT_FINANCE : ch.c === 'leaves' ? LEAVE_PRIVATE : null;
+    if (!hidden) continue;
+    const missing = hidden.filter((k) => ch.data[k] === undefined);
+    const locked = !manager && ch.c === 'projects';
+    if (!locked && !missing.length) continue;
+
+    const old = await existingRecord(wsId, ch.c, ch.id);
+    if (!old) {
+      // Proyek baru dari anggota: portal klien (membuka data ke luar) hanya boleh dinyalakan pemilik/admin.
+      if (locked) ch.data = { ...omit(ch.data, PROJECT_PORTAL), clientPortalEnabled: false };
+      continue;
+    }
+    const next = { ...ch.data };
+    for (const k of locked ? [...PROJECT_FINANCE, ...PROJECT_PORTAL] : missing) {
+      if (old.data[k] === undefined) delete next[k];
+      else next[k] = old.data[k];
+    }
+    ch.data = next;
+  }
 }
 
 export async function pull(req: AuthRequest, res: Response): Promise<void> {
@@ -98,8 +190,10 @@ export async function pull(req: AuthRequest, res: Response): Promise<void> {
   for (const r of rows) {
     if (out[r.collection]) {
       try {
-        out[r.collection].push(JSON.parse(r.data));
+        const data = JSON.parse(r.data);
         count++;
+        const shown = visible(req.user, r.collection, data);
+        if (shown !== null) out[r.collection].push(shown);
       } catch (e) {
         // Skip corrupted data
       }
@@ -113,6 +207,7 @@ export async function pull(req: AuthRequest, res: Response): Promise<void> {
   res.json({
     empty: count === 0,
     rev,
+    role: req.user?.role, // peran terkini: klien menyesuaikan tampilannya tanpa perlu masuk ulang
     collections: out,
   });
 }
@@ -163,6 +258,8 @@ export async function push(req: AuthRequest, res: Response): Promise<void> {
     res.status(403).json({ message: denial });
     return;
   }
+
+  await restoreProtected(user, changes);
 
   // Paket ditentukan server: plan/planUntil/modul pada catatan workspace ditimpa sesuai paket yang dibayar.
   const p = await planOf(wsId);

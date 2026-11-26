@@ -4,6 +4,7 @@ import path from 'path';
 import { createApp, getAllowedOrigins } from './app';
 import { initSocket } from './socket';
 import { loadPlanConfig } from './services/planConfig';
+import { startDueReminders } from './services/dueReminders';
 
 const port = parseInt(process.env.PORT || '8000', 10);
 const app = createApp();
@@ -15,6 +16,7 @@ process.on('unhandledRejection', (reason) => {
 
 const server = http.createServer(app);
 initSocket(server, getAllowedOrigins());
+startDueReminders();
 
 // Konfigurasi paket (harga & batas) dimuat dari database sebelum menerima permintaan.
 loadPlanConfig()

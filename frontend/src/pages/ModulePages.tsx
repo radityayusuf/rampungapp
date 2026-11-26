@@ -1,13 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Download, Mail, MessageCircle, Play, Plus, Send, Square, Trash2 } from 'lucide-react';
-import { api } from '../lib/api';
+import { Download, Mail, MessageCircle, Pencil, Play, Plus, Square, Trash2 } from 'lucide-react';
 import { useApp } from '../store/AppContext';
-import { InvoicePayment } from '../components/InvoicePayment';
 import { go, href } from '../store/router';
-import type { DealStage } from '../types';
+import type { Client, Deal, DealStage, Project, TimeEntry } from '../types';
 import { Avatar, Empty, Field, Modal, PageHeader, Pill, Progress, Segmented, Stat } from '../components/ui';
 import { DEAL_STAGES, TONE } from '../lib/meta';
-import { HARI, randomToken, addDays, diffDays, exportCsv, fmtClock, fmtDate, fmtDateLong, fmtDayDate, fmtDuration, isOverdue, parseISODate, pct, relDay, rupiah, rupiahJt, todayISO, errMsg } from '../lib/format';
+import { HARI, randomToken, addDays, diffDays, exportCsv, fmtClock, fmtDate, fmtDayDate, fmtDuration, parseISODate, pct, relDay, rupiah, rupiahJt, todayISO } from '../lib/format';
 
 const shell = 'flex flex-col gap-5 px-4 py-6 sm:px-8';
 
@@ -18,13 +16,25 @@ const Locked: React.FC<{ name: string }> = ({ name }) => {
   );
 };
 
+/** Nama proyek sebuah catatan; proyek yang sudah dihapus tetap diberi keterangan. */
+const projectLabel = (projects: Project[], id?: string) => (id ? projects.find((p) => p.id === id)?.shortName ?? 'Proyek dihapus' : '');
+
 const csv = (name: string, rows: (string | number | boolean | null | undefined)[][]) => exportCsv(name, rows);
 
 /* ---------------- Time Tracking ---------------- */
 export const TimePage: React.FC = () => {
-  const { workspace, timeEntries, tasks, projects, user, me, timer, timerSeconds, startTimer, stopTimer, addTimeEntry, updateWorkspace, setModal } = useApp();
+  const { workspace, timeEntries, tasks, projects, user, me, timer, timerSeconds, startTimer, stopTimer, addTimeEntry, canEditTime, updateTimeEntry, deleteTimeEntry, updateWorkspace, setModal, canManage } = useApp();
   const [open, setOpen] = useState(false);
-  const [f, setF] = useState({ taskId: '', hours: '1', minutes: '0', billable: true, date: todayISO() });
+  const [editing, setEditing] = useState<TimeEntry | null>(null);
+  const [limit, setLimit] = useState(15);
+  const blank = () => ({ taskId: '', hours: '1', minutes: '0', billable: true, date: todayISO() });
+  const [f, setF] = useState(blank);
+  const openNew = () => { setEditing(null); setF(blank()); setOpen(true); };
+  const openEdit = (e: TimeEntry) => {
+    setEditing(e);
+    setF({ taskId: e.taskId ?? '', hours: String(Math.floor(e.durationSeconds / 3600)), minutes: String(Math.round((e.durationSeconds % 3600) / 60)), billable: e.isBillable, date: e.date });
+    setOpen(true);
+  };
   const today = todayISO();
   const monday = addDays(today, -((parseISODate(today).getDay() + 6) % 7));
   const week = useMemo(() => Array.from({ length: 7 }, (_, i) => { const d = addDays(monday, i); return { d, label: HARI[parseISODate(d).getDay()], sec: timeEntries.filter((e) => e.date === d).reduce((s, e) => s + e.durationSeconds, 0) + (timer && d === today ? timerSeconds : 0) }; }), [timeEntries, monday, timer, timerSeconds, today]);
@@ -38,8 +48,16 @@ export const TimePage: React.FC = () => {
 
   const save = () => {
     const t = tasks.find((x) => x.id === f.taskId);
-    const sec = Number(f.hours) * 3600 + Number(f.minutes) * 60;
-    if (!t || sec <= 0) return;
+    const sec = Math.round(Number(f.hours) * 3600 + Number(f.minutes) * 60);
+    if (!(sec > 0) || !f.date) return;
+    if (editing) {
+      // Durasi yang tidak disentuh tetap persis (formulir hanya menampilkan sampai menit).
+      const same = sec === Math.floor(editing.durationSeconds / 3600) * 3600 + Math.round((editing.durationSeconds % 3600) / 60) * 60;
+      updateTimeEntry(editing.id, { ...(t ? { taskId: t.id, taskTitle: t.title, projectId: t.projectId } : {}), date: f.date, durationSeconds: same ? editing.durationSeconds : sec, isBillable: f.billable });
+      setOpen(false);
+      return;
+    }
+    if (!t) return;
     addTimeEntry({ taskId: t.id, taskTitle: t.title, projectId: t.projectId, userId: me.id, date: f.date, durationSeconds: sec, isBillable: f.billable });
     setOpen(false);
   };
@@ -48,8 +66,8 @@ export const TimePage: React.FC = () => {
     <div className={shell}>
       <PageHeader eyebrow="Modul Bisnis" title="Time Tracking">
         <span className="btn btn-outline pointer-events-none">{fmtDate(monday)} – {fmtDate(addDays(monday, 6))}</span>
-        <button type="button" className="btn btn-outline" onClick={() => csv('timesheet.csv', [['Tanggal', 'Tugas', 'Proyek', 'Anggota', 'Durasi (jam)', 'Billable'], ...weekEntries.map((e) => [e.date, e.taskTitle, projects.find((p) => p.id === e.projectId)?.shortName ?? '', user(e.userId).shortName, (e.durationSeconds / 3600).toFixed(2), e.isBillable ? 'Ya' : 'Tidak'])])}><Download size={15} />Ekspor timesheet</button>
-        <button type="button" className="btn btn-primary" onClick={() => setOpen(true)}><Plus size={16} />Catat manual</button>
+        <button type="button" className="btn btn-outline" onClick={() => csv('timesheet.csv', [['Tanggal', 'Tugas', 'Proyek', 'Anggota', 'Durasi (jam)', 'Billable'], ...weekEntries.map((e) => [e.date, e.taskTitle, projectLabel(projects, e.projectId), user(e.userId).shortName, (e.durationSeconds / 3600).toFixed(2), e.isBillable ? 'Ya' : 'Tidak'])])}><Download size={15} />Ekspor timesheet</button>
+        <button type="button" className="btn btn-primary" onClick={openNew}><Plus size={16} />Catat manual</button>
       </PageHeader>
 
       <section className="flex flex-wrap items-center justify-between gap-4 rounded-card bg-arang p-5 text-white" style={{ color: '#fff' }}>
@@ -74,24 +92,26 @@ export const TimePage: React.FC = () => {
         <section className="grid min-w-0 flex-[1_1_260px] grid-cols-2 gap-3">
           <Stat label="Total" value={<span className="text-2xl">{fmtDuration(total)}</span>} />
           <Stat label="Billable" value={<span className="text-2xl">{fmtDuration(bill)}</span>} tone="#0B7A6B" />
-          <div className="card flex flex-col gap-1.5 p-4"><label htmlFor="tarif" className="text-[13px] text-arang-muted">Tarif per jam</label><input id="tarif" type="number" min={0} step={5000} className="input input-sm" placeholder="Rp / jam" value={rate || ''} onChange={(e) => updateWorkspace({ hourlyRate: Number(e.target.value) })} /></div>
-          <div className="card flex flex-col gap-1 p-4"><span className="text-[13px] text-arang-muted">Siap ditagih</span><span className="text-lg font-extrabold">{rate ? rupiah((bill / 3600) * rate) : '–'}</span>{workspace.enabledModules.finance ? <a href={href.keuangan} className="text-sm font-bold">Buat invoice →</a> : <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-left text-sm font-bold text-brand" onClick={() => setModal('modules')}>Aktifkan Keuangan</button>}</div>
+          <div className="card flex flex-col gap-1.5 p-4"><label htmlFor="tarif" className="text-[13px] text-arang-muted">Tarif per jam</label><input id="tarif" type="number" min={0} step={5000} className="input input-sm" placeholder="Rp / jam" disabled={!canManage} title={canManage ? undefined : 'Diatur pemilik atau admin'} value={rate || ''} onChange={(e) => updateWorkspace({ hourlyRate: Number(e.target.value) })} /></div>
+          <div className="card flex flex-col gap-1 p-4"><span className="text-[13px] text-arang-muted">Siap ditagih</span><span className="text-lg font-extrabold">{rate ? rupiah((bill / 3600) * rate) : '–'}</span>{!canManage ? null : workspace.enabledModules.finance ? <a href={href.keuangan} className="text-sm font-bold">Buat invoice →</a> : <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-left text-sm font-bold text-brand" onClick={() => setModal('modules')}>Aktifkan Keuangan</button>}</div>
         </section>
       </div>
 
       <section className="card overflow-x-auto">
         <div className="border-b border-line-soft px-5 py-4"><h2 className="card-title">Timesheet</h2></div>
         <table className="w-full min-w-[760px] border-collapse text-sm">
-          <thead><tr className="text-left text-xs text-arang-muted">{['Tanggal', 'Tugas', 'Proyek', 'Anggota', 'Durasi', 'Billable'].map((h) => <th key={h} className="px-3 py-2.5 font-semibold first:pl-5">{h}</th>)}</tr></thead>
-          <tbody>{[...timeEntries].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 15).map((e) => (
-            <tr key={e.id} className="border-t border-line-soft"><td className="py-3 pl-5 pr-3 text-arang-muted">{fmtDayDate(e.date)}</td><td className="px-3 py-3 font-semibold">{e.taskTitle}</td><td className="px-3 py-3 text-arang-body">{projects.find((p) => p.id === e.projectId)?.shortName}</td><td className="px-3 py-3">{user(e.userId).shortName}</td><td className="tabular px-3 py-3 font-bold">{fmtDuration(e.durationSeconds)}</td><td className="px-3 py-3">{e.isBillable ? <Pill bg="#E3F3F0" fg="#0B5F54" className="font-bold">Ya</Pill> : <Pill bg="#ECEEEA" fg="#3D4750" className="font-bold">Tidak</Pill>}</td></tr>
+          <thead><tr className="text-left text-xs text-arang-muted">{['Tanggal', 'Tugas', 'Proyek', 'Anggota', 'Durasi', 'Billable', ''].map((h) => <th key={h} className="px-3 py-2.5 font-semibold first:pl-5">{h || <span className="sr-only">Aksi</span>}</th>)}</tr></thead>
+          <tbody>{!timeEntries.length && <tr className="border-t border-line-soft"><td colSpan={7} className="px-5 py-6 text-center text-arang-muted">Belum ada catatan waktu.</td></tr>}{[...timeEntries].sort((a, b) => b.date.localeCompare(a.date)).slice(0, limit).map((e) => (
+            <tr key={e.id} className="border-t border-line-soft"><td className="py-3 pl-5 pr-3 text-arang-muted">{fmtDayDate(e.date)}</td><td className="px-3 py-3 font-semibold">{e.taskTitle}</td><td className="px-3 py-3 text-arang-body">{projectLabel(projects, e.projectId)}</td><td className="px-3 py-3">{user(e.userId).shortName}</td><td className="tabular px-3 py-3 font-bold">{fmtDuration(e.durationSeconds)}</td><td className="px-3 py-3">{e.isBillable ? <Pill bg="#E3F3F0" fg="#0B5F54" className="font-bold">Ya</Pill> : <Pill bg="#ECEEEA" fg="#3D4750" className="font-bold">Tidak</Pill>}</td>
+              <td className="px-3 py-2">{canEditTime(e) && <span className="flex justify-end gap-0.5"><button type="button" aria-label={`Ubah catatan ${e.taskTitle}`} title="Ubah" className="btn-icon border-0" onClick={() => openEdit(e)}><Pencil size={14} /></button><button type="button" aria-label={`Hapus catatan ${e.taskTitle}`} title="Hapus" className="btn-icon border-0 hover:text-danger" onClick={() => window.confirm(`Hapus catatan ${fmtDuration(e.durationSeconds)} untuk "${e.taskTitle}"?`) && deleteTimeEntry(e.id)}><Trash2 size={14} /></button></span>}</td></tr>
           ))}</tbody>
         </table>
+        {timeEntries.length > limit && <button type="button" className="btn btn-ghost btn-sm m-3" onClick={() => setLimit(limit + 30)}>Tampilkan lebih banyak ({timeEntries.length - limit})</button>}
       </section>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Catat waktu manual" footer={<><button type="button" className="btn btn-outline" onClick={() => setOpen(false)}>Batal</button><button type="button" className="btn btn-primary" disabled={!f.taskId} onClick={save}>Simpan</button></>}>
+      <Modal open={open} onClose={() => setOpen(false)} title={editing ? 'Ubah catatan waktu' : 'Catat waktu manual'} footer={<><button type="button" className="btn btn-outline" onClick={() => setOpen(false)}>Batal</button><button type="button" className="btn btn-primary" disabled={(!f.taskId && !editing) || !f.date || !(Number(f.hours) * 60 + Number(f.minutes) > 0)} onClick={save}>Simpan</button></>}>
         <div className="flex flex-col gap-4">
-          <Field label="Tugas" htmlFor="mt"><select id="mt" className="input" value={f.taskId} onChange={(e) => setF({ ...f, taskId: e.target.value })}><option value="">Pilih tugas...</option>{tasks.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}</select></Field>
+          <Field label="Tugas" htmlFor="mt"><select id="mt" className="input" value={f.taskId} onChange={(e) => setF({ ...f, taskId: e.target.value })}><option value="">Pilih tugas...</option>{editing && f.taskId && !tasks.some((t) => t.id === f.taskId) && <option value={f.taskId}>{editing.taskTitle} (tugas dihapus)</option>}{tasks.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}</select></Field>
           <div className="grid grid-cols-3 gap-3"><Field label="Tanggal" htmlFor="md"><input id="md" type="date" className="input" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field><Field label="Jam" htmlFor="mh"><input id="mh" type="number" min={0} className="input" value={f.hours} onChange={(e) => setF({ ...f, hours: e.target.value })} /></Field><Field label="Menit" htmlFor="mm"><input id="mm" type="number" min={0} max={59} className="input" value={f.minutes} onChange={(e) => setF({ ...f, minutes: e.target.value })} /></Field></div>
           <label className="flex items-center gap-2.5 text-sm"><input type="checkbox" checked={f.billable} onChange={(e) => setF({ ...f, billable: e.target.checked })} style={{ accentColor: '#0B7A6B' }} className="h-[18px] w-[18px]" />Billable (bisa ditagihkan ke klien)</label>
         </div>
@@ -102,18 +122,41 @@ export const TimePage: React.FC = () => {
 
 /* ---------------- CRM ---------------- */
 export const CrmPage: React.FC<{ tab: 'pipeline' | 'klien' | 'portal' }> = ({ tab }) => {
-  const { workspace, deals, clients, projects, tasks, moveDeal, createDeal, addClient, deleteClient, deleteDeal, notify, mode, updateProject } = useApp();
+  const { workspace, deals, clients, projects, tasks, moveDeal, createDeal, addClient, updateClient, deleteClient, updateDeal, deleteDeal, notify, mode, updateProject, canManage } = useApp();
   const [open, setOpen] = useState(false);
   const [clientModal, setClientModal] = useState(false);
+  const [editClient, setEditClient] = useState<Client | null>(null);
+  const [editDeal, setEditDeal] = useState<Deal | null>(null);
+  const [showLost, setShowLost] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [f, setF] = useState({ clientId: '', company: '', contact: '', need: '', value: '', stage: 'prospect' as DealStage });
   const [cf, setCf] = useState({ company: '', contact: '', email: '', phone: '', status: 'lead' as 'lead' | 'active' | 'past' });
   // Proyek yang portalnya sudah aktif tetapi belum punya token (data lama) diberi token.
   useEffect(() => {
+    if (!canManage) return; // portal klien hanya diatur pemilik/admin
     projects.forEach((p) => { if (p.clientPortalEnabled && !p.portalToken) updateProject(p.id, { portalToken: randomToken() }); });
-  }, [projects, updateProject]);
+  }, [projects, updateProject, canManage]);
   if (!workspace.enabledModules.crm) return <Locked name="CRM Klien" />;
   const cl = (id: string) => clients.find((c) => c.id === id);
+  const openClient = (c: Client | null) => {
+    setEditClient(c);
+    setCf(c ? { company: c.company, contact: c.contact, email: c.email, phone: c.phone, status: c.status } : { company: '', contact: '', email: '', phone: '', status: 'lead' });
+    setClientModal(true);
+  };
+  const saveClient = () => {
+    if (!cf.company.trim()) return;
+    if (editClient) updateClient(editClient.id, { ...cf, company: cf.company.trim() });
+    else addClient({ ...cf, company: cf.company.trim() });
+    setClientModal(false);
+  };
+  const removeClient = (c: Client) => {
+    const n = deals.filter((d) => d.clientId === c.id).length;
+    const np = projects.filter((p) => p.clientId === c.id).length;
+    const also = [n && `${n} deal ikut terhapus`, np && `${np} proyek tetap ada, tetapi tidak lagi terhubung dan portal kliennya mati`].filter(Boolean).map((x) => `\n• ${x}`).join('');
+    if (window.confirm(`Hapus klien "${c.company}"?${also}\n\nTindakan ini tidak bisa dibatalkan.`)) deleteClient(c.id);
+  };
+  const lostDeals = deals.filter((d) => d.stage === 'lost');
+  const stages = showLost ? [...DEAL_STAGES, { key: 'lost' as const, label: 'Kalah' }] : DEAL_STAGES;
   const stageOf = (s: DealStage) => deals.filter((d) => d.stage === s);
   const sum = (ds: typeof deals) => ds.reduce((a, d) => a + d.value, 0);
   const openDeals = deals.filter((d) => d.stage !== 'won' && d.stage !== 'lost');
@@ -162,7 +205,7 @@ export const CrmPage: React.FC<{ tab: 'pipeline' | 'klien' | 'portal' }> = ({ ta
                 <Download size={15} />
                 Unduh CSV
               </button>
-              <button type="button" className="btn btn-outline" onClick={() => setClientModal(true)}>
+              <button type="button" className="btn btn-outline" onClick={() => openClient(null)}>
                 <Plus size={16} />
                 Klien baru
               </button>
@@ -179,8 +222,9 @@ export const CrmPage: React.FC<{ tab: 'pipeline' | 'klien' | 'portal' }> = ({ ta
           <Stat label="Tingkat menang" value={`${rate}%`} note="90 hari terakhir" />
           <Stat label="Tindak lanjut mendesak" value={openDeals.filter((d) => d.urgent).length} tone="#8A5A00" note="telepon dan email" />
         </div>
+        <button type="button" aria-pressed={showLost} className="btn btn-outline btn-sm self-start" onClick={() => setShowLost(!showLost)}>{showLost ? 'Sembunyikan deal kalah' : `Tampilkan deal kalah (${lostDeals.length})`}</button>
         <div className="flex items-start gap-4 overflow-x-auto pb-2">
-          {DEAL_STAGES.map((s) => { const ds = stageOf(s.key); return (
+          {stages.map((s) => { const ds = stageOf(s.key); return (
             <section key={s.key} aria-label={s.label} onDragOver={(e) => e.preventDefault()} onDrop={() => { if (dragId) moveDeal(dragId, s.key); setDragId(null); }} className="flex w-[270px] shrink-0 flex-col gap-2.5 rounded-card bg-line-soft p-3">
               <div className="flex items-baseline justify-between px-1 pt-1"><h2 className="m-0 text-sm font-bold">{s.label} <span className="font-medium text-arang-muted">{ds.length}</span></h2><span className="text-[13px] font-bold text-arang-body">{rupiahJt(sum(ds))}</span></div>
               {ds.map((d) => { const tone = d.stage === 'won' ? TONE.won : d.urgent ? TONE.urgent : TONE.calm; return (
@@ -191,7 +235,8 @@ export const CrmPage: React.FC<{ tab: 'pipeline' | 'klien' | 'portal' }> = ({ ta
                   <div className="flex items-center gap-1.5">
                     <label className="sr-only" htmlFor={`st-${d.id}`}>Pindah tahap</label>
                     <select id={`st-${d.id}`} className="input input-sm h-8 text-xs flex-1" value={d.stage} onChange={(e) => moveDeal(d.id, e.target.value as DealStage)}>{DEAL_STAGES.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}<option value="lost">Kalah</option></select>
-                    <button type="button" title="Hapus deal" onClick={() => deleteDeal(d.id)} className="btn-icon p-1 text-arang-muted hover:text-red-600 hover:bg-red-50"><Trash2 size={14} /></button>
+                    <button type="button" aria-label={`Ubah deal ${d.need}`} title="Ubah deal" onClick={() => setEditDeal({ ...d })} className="btn-icon p-1 text-arang-muted"><Pencil size={14} /></button>
+                    {canManage && <button type="button" title="Hapus deal" onClick={() => window.confirm(`Hapus deal "${d.need}"?`) && deleteDeal(d.id)} className="btn-icon p-1 text-arang-muted hover:text-red-600 hover:bg-red-50"><Trash2 size={14} /></button>}
                   </div>
                 </div>); })}
               {!ds.length && <span className="py-3 text-center text-[13px] text-arang-muted">Seret deal ke sini</span>}
@@ -202,7 +247,7 @@ export const CrmPage: React.FC<{ tab: 'pipeline' | 'klien' | 'portal' }> = ({ ta
       {tab === 'klien' && (
         <section className="card overflow-x-auto"><table className="w-full min-w-[760px] border-collapse text-sm">
           <thead><tr className="text-left text-xs text-arang-muted">{['Klien', 'Kontak', 'Email', 'Telepon', 'Status', 'Nilai deal', 'Aksi'].map((h) => <th key={h} className="px-3 py-2.5 font-semibold first:pl-5">{h}</th>)}</tr></thead>
-          <tbody>{clients.map((c) => <tr key={c.id} className="border-t border-line-soft"><td className="py-3 pl-5 pr-3 font-semibold">{c.company}</td><td className="px-3 py-3">{c.contact}</td><td className="px-3 py-3 text-arang-body">{c.email || '–'}</td><td className="px-3 py-3 text-arang-body">{c.phone || '–'}</td><td className="px-3 py-3"><Pill bg={c.status === 'active' ? '#E3F3F0' : c.status === 'lead' ? '#FDF3DC' : '#ECEEEA'} fg={c.status === 'active' ? '#0B5F54' : c.status === 'lead' ? '#6B4A00' : '#3D4750'} className="font-bold">{c.status === 'active' ? 'Aktif' : c.status === 'lead' ? 'Prospek' : 'Lama'}</Pill></td><td className="px-3 py-3 font-bold">{rupiahJt(sum(deals.filter((d) => d.clientId === c.id && d.stage !== 'lost')))}</td><td className="px-3 py-3"><div className="flex items-center gap-1.5">{c.phone && <a href={`https://wa.me/${c.phone.replace(/[^0-9]/g, '').replace(/^0/, '62')}`} target="_blank" rel="noreferrer" title="Chat WhatsApp" className="btn-icon p-1 text-emerald-600 hover:bg-emerald-50"><MessageCircle size={15} /></a>}{c.email && <a href={`mailto:${c.email}`} title="Kirim Email" className="btn-icon p-1 text-blue-600 hover:bg-blue-50"><Mail size={15} /></a>}<button type="button" title="Hapus Klien" onClick={() => deleteClient(c.id)} className="btn-icon p-1 text-red-500 hover:bg-red-50"><Trash2 size={15} /></button></div></td></tr>)}</tbody>
+          <tbody>{clients.map((c) => <tr key={c.id} className="border-t border-line-soft"><td className="py-3 pl-5 pr-3 font-semibold">{c.company}</td><td className="px-3 py-3">{c.contact}</td><td className="px-3 py-3 text-arang-body">{c.email || '–'}</td><td className="px-3 py-3 text-arang-body">{c.phone || '–'}</td><td className="px-3 py-3"><Pill bg={c.status === 'active' ? '#E3F3F0' : c.status === 'lead' ? '#FDF3DC' : '#ECEEEA'} fg={c.status === 'active' ? '#0B5F54' : c.status === 'lead' ? '#6B4A00' : '#3D4750'} className="font-bold">{c.status === 'active' ? 'Aktif' : c.status === 'lead' ? 'Prospek' : 'Lama'}</Pill></td><td className="px-3 py-3 font-bold">{rupiahJt(sum(deals.filter((d) => d.clientId === c.id && d.stage !== 'lost')))}</td><td className="px-3 py-3"><div className="flex items-center gap-1.5">{c.phone && <a href={`https://wa.me/${c.phone.replace(/[^0-9]/g, '').replace(/^0/, '62')}`} target="_blank" rel="noreferrer" title="Chat WhatsApp" className="btn-icon p-1 text-emerald-600 hover:bg-emerald-50"><MessageCircle size={15} /></a>}{c.email && <a href={`mailto:${c.email}`} title="Kirim Email" className="btn-icon p-1 text-blue-600 hover:bg-blue-50"><Mail size={15} /></a>}<button type="button" aria-label={`Ubah klien ${c.company}`} title="Ubah klien" onClick={() => openClient(c)} className="btn-icon p-1 text-arang-muted"><Pencil size={15} /></button>{canManage && <button type="button" title="Hapus Klien" onClick={() => removeClient(c)} className="btn-icon p-1 text-red-500 hover:bg-red-50"><Trash2 size={15} /></button>}</div></td></tr>)}</tbody>
         </table></section>
       )}
 
@@ -214,7 +259,7 @@ export const CrmPage: React.FC<{ tab: 'pipeline' | 'klien' | 'portal' }> = ({ ta
               <div className="flex min-w-0 flex-[1_1_260px] flex-col gap-2"><span className="font-bold">{p.name}</span><span className="text-[13px] text-arang-muted">{cl(p.clientId!)?.company} · {v}% rampung</span><Progress value={v} h={6} /></div>
               <div className="flex items-center gap-2">
                 {p.clientPortalEnabled && p.portalToken && <><a className="btn btn-outline btn-sm" href={href.portal(p.portalToken)} target="_blank" rel="noreferrer">Buka portal</a><button type="button" className="btn btn-outline btn-sm" onClick={() => { navigator.clipboard?.writeText(`${location.origin}/${href.portal(p.portalToken!)}`); notify('Tautan portal disalin', mode === 'server' ? undefined : 'Portal hanya berfungsi setelah masuk dengan akun (bukan mode lokal).', 'success'); }}>Salin tautan</button></>}
-                <PortalToggle id={p.id} on={p.clientPortalEnabled} tokenOf={p.portalToken} />
+                {canManage ? <PortalToggle id={p.id} on={p.clientPortalEnabled} tokenOf={p.portalToken} /> : <span className="text-[13px] text-arang-muted">{p.clientPortalEnabled ? 'Portal aktif' : 'Portal nonaktif'} · diatur pemilik/admin</span>}
               </div>
             </div>); })}
         </div>
@@ -229,7 +274,9 @@ export const CrmPage: React.FC<{ tab: 'pipeline' | 'klien' | 'portal' }> = ({ ta
         </div>
       </Modal>
 
-      <Modal open={clientModal} onClose={() => setClientModal(false)} title="Klien baru" footer={<><button type="button" className="btn btn-outline" onClick={() => setClientModal(false)}>Batal</button><button type="button" className="btn btn-primary" disabled={!cf.company.trim()} onClick={() => { addClient(cf); setClientModal(false); setCf({ company: '', contact: '', email: '', phone: '', status: 'lead' }); }}>Simpan klien</button></>}>
+      {editDeal && <DealDialog deal={editDeal} clients={clients} onClose={() => setEditDeal(null)} onSave={(p) => { updateDeal(editDeal.id, p); setEditDeal(null); }} />}
+
+      <Modal open={clientModal} onClose={() => setClientModal(false)} title={editClient ? 'Ubah klien' : 'Klien baru'} footer={<><button type="button" className="btn btn-outline" onClick={() => setClientModal(false)}>Batal</button><button type="button" className="btn btn-primary" disabled={!cf.company.trim()} onClick={saveClient}>Simpan klien</button></>}>
         <div className="flex flex-col gap-4">
           <Field label="Nama perusahaan / klien" htmlFor="cl-co"><input id="cl-co" required className="input" placeholder="PT Maju Bersama" value={cf.company} onChange={(e) => setCf({ ...cf, company: e.target.value })} /></Field>
           <Field label="Nama kontak (PIC)" htmlFor="cl-ct"><input id="cl-ct" className="input" placeholder="Budi Santoso" value={cf.contact} onChange={(e) => setCf({ ...cf, contact: e.target.value })} /></Field>
@@ -250,147 +297,34 @@ export const CrmPage: React.FC<{ tab: 'pipeline' | 'klien' | 'portal' }> = ({ ta
   );
 };
 
+const DealDialog: React.FC<{ deal: Deal; clients: Client[]; onClose: () => void; onSave: (p: Partial<Deal>) => void }> = ({ deal, clients, onClose, onSave }) => {
+  const [f, setF] = useState({ clientId: deal.clientId, need: deal.need, value: String(deal.value / 1_000_000), nextAction: deal.nextAction, urgent: deal.urgent });
+  const value = Math.round(Number(f.value) * 1_000_000);
+  const ready = !!f.clientId && !!f.need.trim() && value > 0;
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (ready) onSave({ clientId: f.clientId, need: f.need.trim(), value, nextAction: f.nextAction.trim() || '-', urgent: f.urgent });
+  };
+  return (
+    <Modal open onClose={onClose} title="Ubah deal" footer={<><button type="button" className="btn btn-outline" onClick={onClose}>Batal</button><button type="submit" form="form-deal" className="btn btn-primary" disabled={!ready}>Simpan</button></>}>
+      <form id="form-deal" onSubmit={submit} className="flex flex-col gap-4">
+        <Field label="Klien" htmlFor="ud-c"><select id="ud-c" className="input" value={f.clientId} onChange={(e) => setF({ ...f, clientId: e.target.value })}>{!clients.some((c) => c.id === f.clientId) && <option value={f.clientId}>Klien dihapus</option>}{clients.map((c) => <option key={c.id} value={c.id}>{c.company}</option>)}</select></Field>
+        <Field label="Kebutuhan klien" htmlFor="ud-n"><input id="ud-n" className="input" value={f.need} onChange={(e) => setF({ ...f, need: e.target.value })} /></Field>
+        <div className="grid grid-cols-2 gap-3"><Field label="Nilai (juta rupiah)" htmlFor="ud-v"><input id="ud-v" type="number" min={0} step="any" className="input" value={f.value} onChange={(e) => setF({ ...f, value: e.target.value })} /></Field><Field label="Tindak lanjut" htmlFor="ud-a"><input id="ud-a" className="input" placeholder="Contoh: Kirim proposal" value={f.nextAction} onChange={(e) => setF({ ...f, nextAction: e.target.value })} /></Field></div>
+        <label className="flex items-center gap-2.5 text-sm"><input type="checkbox" checked={f.urgent} onChange={(e) => setF({ ...f, urgent: e.target.checked })} style={{ accentColor: '#0B7A6B' }} className="h-[18px] w-[18px]" />Tindak lanjut mendesak</label>
+      </form>
+    </Modal>
+  );
+};
+
 const PortalToggle: React.FC<{ id: string; on: boolean; tokenOf?: string }> = ({ id, on, tokenOf }) => {
   const { updateProject, canUseModule, setModal, notify } = useApp();
   return <button type="button" role="switch" aria-checked={on} aria-label="Portal klien" onClick={() => { if (!canUseModule('integrations')) { notify('Portal klien ada di paket Bisnis'); setModal('pricing'); return; } updateProject(id, { clientPortalEnabled: !on, ...(!on && !tokenOf ? { portalToken: randomToken() } : {}) }); }} className="relative h-7 w-12 cursor-pointer rounded-full border-0 transition-colors" style={{ background: on ? '#0B7A6B' : '#C9CEC8' }}><span className="absolute top-1 h-5 w-5 rounded-full bg-white transition-all" style={{ left: on ? 24 : 4 }} /></button>;
 };
 
-/* ---------------- Keuangan ---------------- */
-export const FinancePage: React.FC = () => {
-  const { workspace, invoices, clients, projects, expenses, createInvoice, addExpense, setModal, notify, canManage, integrations, mode } = useApp();
-  const [sel, setSel] = useState<string | null>(null);
-  const [inv, setInv] = useState(false);
-  const [exp, setExp] = useState(false);
-  const [sendingWa, setSendingWa] = useState(false);
-  const [fi, setFi] = useState({ clientId: '', projectId: '', desc: '', amount: '' });
-  const [fe, setFe] = useState({ projectId: '', title: '', amount: '', category: 'operasional' });
-  if (!workspace.enabledModules.finance) return <Locked name="Keuangan" />;
-  if (!canManage) return <div className={shell}><Empty title="Akses terbatas" text="Modul ini hanya untuk pemilik dan admin workspace." /></div>;
-  const client = (id: string) => clients.find((c) => c.id === id);
-  const total = (i: (typeof invoices)[number]) => i.items.reduce((s, x) => s + x.amount, 0);
-  const status = (i: (typeof invoices)[number]) => (i.status === 'paid' ? 'Lunas' : isOverdue(i.dueDate) ? 'Lewat tempo' : 'Menunggu');
-  const tone = { Lunas: ['#E3F3F0', '#0B5F54'], 'Lewat tempo': ['#FDECEA', '#B42318'], Menunggu: ['#FDF3DC', '#6B4A00'] } as const;
-  const unpaid = invoices.filter((i) => i.status === 'unpaid');
-  const late = unpaid.filter((i) => isOverdue(i.dueDate));
-  const paid30 = invoices.filter((i) => i.status === 'paid' && i.paidAt && diffDays(i.paidAt.slice(0, 10), todayISO()) <= 30);
-  const bProjects = projects.filter((p) => p.budget > 0);
-  const budget = bProjects.reduce((s, p) => s + p.budget, 0);
-  const spent = bProjects.reduce((s, p) => s + p.spent, 0);
-  const preview = invoices.find((i) => i.id === sel) ?? invoices[0];
-
-  return (
-    <div className={shell}>
-      <PageHeader eyebrow="Modul Bisnis" title="Keuangan Proyek">
-        <button
-          type="button"
-          className="btn btn-outline"
-          onClick={() =>
-            csv('daftar-invoice.csv', [
-              ['Nomor', 'Klien', 'Jumlah (Rp)', 'Jatuh Tempo', 'Status'],
-              ...invoices.map((i) => [
-                i.number,
-                client(i.clientId)?.company || '',
-                String(total(i)),
-                i.dueDate,
-                status(i),
-              ]),
-            ])
-          }
-        >
-          <Download size={15} />
-          Unduh CSV
-        </button>
-        <button type="button" className="btn btn-outline" onClick={() => setExp(true)}><Plus size={15} />Catat pengeluaran</button>
-        <button type="button" className="btn btn-primary" onClick={() => setInv(true)}><Plus size={16} />Buat invoice</button>
-      </PageHeader>
-      <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))' }}>
-        <Stat label="Belum dibayar" value={rupiahJt(unpaid.reduce((s, i) => s + total(i), 0))} note={`${unpaid.length} invoice`} />
-        <Stat label="Lewat jatuh tempo" value={rupiahJt(late.reduce((s, i) => s + total(i), 0))} tone={late.length ? '#B42318' : undefined} note={late.length ? late.map((i) => client(i.clientId)?.company).join(', ') : 'Tidak ada'} />
-        <Stat label="Diterima 30 hari" value={rupiahJt(paid30.reduce((s, i) => s + total(i), 0))} tone="#0B7A6B" note={`${paid30.length} invoice lunas`} />
-        <Stat label="Anggaran terpakai" value={`${pct(spent, budget)}%`} note={`${rupiahJt(spent)} dari ${rupiahJt(budget)}`} />
-      </div>
-      <div className="flex flex-wrap items-start gap-4">
-        <div className="flex min-w-0 flex-[3_1_520px] flex-col gap-4">
-          <section className="card overflow-x-auto"><div className="border-b border-line-soft px-5 py-4"><h2 className="card-title">Invoice</h2></div>
-            <table className="w-full min-w-[640px] border-collapse text-sm"><thead><tr className="text-left text-xs text-arang-muted">{['Nomor', 'Klien', 'Jumlah', 'Jatuh tempo', 'Status'].map((h, i) => <th key={h} className={`px-3 py-2.5 font-semibold first:pl-5 ${i === 2 ? 'text-right' : ''}`}>{h}</th>)}</tr></thead>
-              <tbody>{invoices.map((i) => { const s = status(i); return (
-                <tr key={i.id} onClick={() => setSel(i.id)} className="cursor-pointer border-t border-line-soft" style={{ background: preview?.id === i.id ? '#F7FBFA' : undefined }}>
-                  <td className="py-3 pl-5 pr-3 font-semibold">{i.number}</td><td className="px-3 py-3"><span className="flex flex-col"><span className="font-semibold">{client(i.clientId)?.company}</span><span className="text-xs text-arang-muted">{i.items[0]?.description}</span></span></td>
-                  <td className="tabular px-3 py-3 text-right font-bold">{rupiah(total(i))}</td><td className="px-3 py-3 text-arang-body">{fmtDate(i.dueDate)}</td><td className="px-3 py-3"><Pill bg={tone[s][0]} fg={tone[s][1]} className="font-bold">{s}</Pill></td></tr>); })}</tbody></table></section>
-          <section className="card flex flex-col gap-3.5 p-5"><h2 className="card-title">Anggaran per proyek</h2>
-            {bProjects.map((p) => { const v = pct(p.spent, p.budget); return <div key={p.id} className="flex flex-col gap-1.5"><div className="flex justify-between gap-3 text-sm"><span className="font-semibold">{p.shortName}</span><span className="text-arang-muted">{rupiahJt(p.spent)} dari {rupiahJt(p.budget)}</span></div><Progress value={v} h={8} color={v >= 75 ? '#F2B33D' : '#0F9D8A'} /></div>; })}
-            {expenses.length > 0 && <div className="mt-2 flex flex-col text-sm"><span className="mb-1 text-xs font-bold text-arang-muted">PENGELUARAN TERBARU</span>{expenses.slice(0, 4).map((e) => <div key={e.id} className="flex justify-between gap-3 border-t border-line-soft py-2"><span>{e.title}<span className="text-xs text-arang-muted"> · {projects.find((p) => p.id === e.projectId)?.shortName}</span></span><span className="font-semibold">{rupiah(e.amount)}</span></div>)}</div>}
-          </section>
-        </div>
-        {preview && (
-          <section aria-label="Pratinjau invoice" className="card print-area flex min-w-0 flex-[2_1_340px] flex-col gap-4 p-6">
-            <div className="flex items-start justify-between"><div className="flex flex-col"><span className="text-xs font-bold tracking-[0.6px] text-arang-muted">INVOICE</span><span className="text-xl font-extrabold">{preview.number}</span></div>{(() => { const s = status(preview); return <Pill bg={tone[s][0]} fg={tone[s][1]} className="font-bold">{s}</Pill>; })()}</div>
-            <div className="flex justify-between gap-4 text-[13px] leading-relaxed"><div className="flex flex-col"><span className="text-arang-muted">Kepada</span><span className="font-bold">{client(preview.clientId)?.company}</span><span>u.p. {client(preview.clientId)?.contact}</span></div><div className="flex flex-col text-right"><span className="text-arang-muted">Jatuh tempo</span><span className="font-bold">{fmtDateLong(preview.dueDate)}</span></div></div>
-            <div className="flex flex-col gap-2 border-y border-line-soft py-3 text-sm">{preview.items.map((x, i) => <div key={i} className="flex justify-between gap-3"><span>{x.description}</span><span className="whitespace-nowrap font-bold">{rupiah(x.amount)}</span></div>)}</div>
-            <div className="flex justify-between text-lg font-extrabold"><span>Total</span><span>{rupiah(total(preview))}</span></div>
-            <InvoicePayment invoice={preview} total={total(preview)} />
-            <div className="no-print flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={sendingWa}
-                className="btn btn-primary flex-1"
-                onClick={async () => {
-                  const c = client(preview.clientId);
-                  if (mode !== 'server' || !integrations?.whatsapp.configured) {
-                    notify('WhatsApp belum dikonfigurasi', 'Server belum memiliki WHATSAPP_TOKEN dan WHATSAPP_PHONE_NUMBER_ID.');
-                    setModal('wa');
-                    return;
-                  }
-                  const phone = c?.phone || '';
-                  if (!phone) {
-                    notify('Nomor telepon tidak ada', 'Klien belum memiliki nomor telepon WhatsApp.');
-                    return;
-                  }
-                  setSendingWa(true);
-                  try {
-                    await api.sendWhatsApp({
-                      phone,
-                      message: `Halo ${c?.contact || c?.company}, tagihan invoice ${preview.number} sebesar ${rupiah(total(preview))} telah diterbitkan dengan jatuh tempo ${fmtDateLong(preview.dueDate)}. Silakan lakukan pembayaran atau hubungi kami bila ada pertanyaan. Terima kasih!`
-                    });
-                    notify('Diterima WhatsApp', `Pesan untuk ${c?.contact || c?.company} (${phone}) dikirim.`, 'wa');
-                  } catch (err) {
-                    notify('Gagal kirim WhatsApp', errMsg(err, 'Gateway WhatsApp tidak merespons.'));
-                  } finally {
-                    setSendingWa(false);
-                  }
-                }}
-              >
-                <Send size={15} />
-                {sendingWa ? 'Mengirim...' : 'Kirim via WhatsApp'}
-              </button>
-              <button type="button" className="btn btn-outline flex-1" onClick={() => window.print()}>Unduh PDF</button>
-            </div>
-          </section>
-        )}
-      </div>
-
-      <Modal open={inv} onClose={() => setInv(false)} title="Buat invoice" footer={<><button type="button" className="btn btn-outline" onClick={() => setInv(false)}>Batal</button><button type="button" className="btn btn-primary" disabled={!fi.clientId || !fi.desc || !Number(fi.amount)} onClick={() => { const n = createInvoice({ clientId: fi.clientId, projectId: fi.projectId || undefined, items: [{ description: fi.desc, amount: Number(fi.amount) }], issueDate: todayISO(), dueDate: relDay(14) }); setSel(n.id); setInv(false); setFi({ clientId: '', projectId: '', desc: '', amount: '' }); }}>Terbitkan</button></>}>
-        <div className="flex flex-col gap-4">
-          <Field label="Klien" htmlFor="ic"><select id="ic" className="input" value={fi.clientId} onChange={(e) => setFi({ ...fi, clientId: e.target.value })}><option value="">Pilih klien...</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.company}</option>)}</select></Field>
-          <Field label="Proyek (opsional)" htmlFor="ip"><select id="ip" className="input" value={fi.projectId} onChange={(e) => setFi({ ...fi, projectId: e.target.value })}><option value="">–</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.shortName}</option>)}</select></Field>
-          <Field label="Uraian" htmlFor="id"><input id="id" className="input" placeholder="Contoh: Termin 2 (50%) website" value={fi.desc} onChange={(e) => setFi({ ...fi, desc: e.target.value })} /></Field>
-          <Field label="Jumlah (Rp)" htmlFor="ia" hint="Jatuh tempo otomatis 14 hari dari hari ini."><input id="ia" type="number" min={0} className="input" value={fi.amount} onChange={(e) => setFi({ ...fi, amount: e.target.value })} /></Field>
-        </div>
-      </Modal>
-      <Modal open={exp} onClose={() => setExp(false)} title="Catat pengeluaran" footer={<><button type="button" className="btn btn-outline" onClick={() => setExp(false)}>Batal</button><button type="button" className="btn btn-primary" disabled={!fe.projectId || !fe.title || !Number(fe.amount)} onClick={() => { addExpense({ projectId: fe.projectId, title: fe.title, amount: Number(fe.amount), category: fe.category as never, date: todayISO() }); setExp(false); setFe({ projectId: '', title: '', amount: '', category: 'operasional' }); }}>Simpan</button></>}>
-        <div className="flex flex-col gap-4">
-          <Field label="Proyek" htmlFor="ep"><select id="ep" className="input" value={fe.projectId} onChange={(e) => setFe({ ...fe, projectId: e.target.value })}><option value="">Pilih proyek...</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.shortName}</option>)}</select></Field>
-          <Field label="Keterangan" htmlFor="et"><input id="et" className="input" value={fe.title} onChange={(e) => setFe({ ...fe, title: e.target.value })} /></Field>
-          <div className="grid grid-cols-2 gap-3"><Field label="Jumlah (Rp)" htmlFor="eam"><input id="eam" type="number" min={0} className="input" value={fe.amount} onChange={(e) => setFe({ ...fe, amount: e.target.value })} /></Field><Field label="Kategori" htmlFor="ek"><select id="ek" className="input" value={fe.category} onChange={(e) => setFe({ ...fe, category: e.target.value })}>{['operasional', 'vendor', 'software', 'transport', 'lainnya'].map((c) => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}</select></Field></div>
-        </div>
-      </Modal>
-    </div>
-  );
-};
-
 /* ---------------- SDM ---------------- */
 export const SdmPage: React.FC = () => {
-  const { workspace, attendances, leaves, users, user, me, tasks, checkIn, checkOut, addLeave, decideLeave } = useApp();
+  const { workspace, attendances, leaves, users, user, me, tasks, checkIn, checkOut, addLeave, decideLeave, canCancelLeave, cancelLeave } = useApp();
   const [open, setOpen] = useState(false);
   const [f, setF] = useState({ type: 'tahunan', startDate: relDay(7), endDate: relDay(7), reason: '' });
   if (!workspace.enabledModules.sdm) return <Locked name="SDM" />;
@@ -439,7 +373,7 @@ export const SdmPage: React.FC = () => {
       </div>
       <section className="card flex flex-col p-5"><h2 className="card-title mb-2">Pengajuan cuti</h2>
         {!leaves.length && <span className="py-3 text-sm text-arang-muted">Belum ada pengajuan.</span>}
-        {leaves.map((l) => <div key={l.id} className="flex flex-wrap items-center justify-between gap-3 border-t border-line-soft py-3 text-sm"><div className="flex flex-col gap-0.5"><span className="font-semibold">{user(l.userId).name} · Cuti {l.type}</span><span className="text-xs text-arang-muted">{fmtDate(l.startDate)} – {fmtDate(l.endDate)} · {l.reason}</span></div><div className="flex items-center gap-2"><Pill bg={lt[l.status][1]} fg={lt[l.status][2]} className="font-bold">{lt[l.status][0]}</Pill>{l.status === 'pending' && isAdmin && <><button type="button" className="btn btn-outline btn-sm" onClick={() => decideLeave(l.id, false)}>Tolak</button><button type="button" className="btn btn-primary btn-sm" onClick={() => decideLeave(l.id, true)}>Setujui</button></>}</div></div>)}
+        {leaves.map((l) => <div key={l.id} className="flex flex-wrap items-center justify-between gap-3 border-t border-line-soft py-3 text-sm"><div className="flex flex-col gap-0.5"><span className="font-semibold">{user(l.userId).name} · Cuti {l.type ?? ''}</span><span className="text-xs text-arang-muted">{fmtDate(l.startDate)} – {fmtDate(l.endDate)}{l.reason ? ` · ${l.reason}` : ''}</span></div><div className="flex items-center gap-2"><Pill bg={lt[l.status][1]} fg={lt[l.status][2]} className="font-bold">{lt[l.status][0]}</Pill>{l.status === 'pending' && isAdmin && <><button type="button" className="btn btn-outline btn-sm" onClick={() => decideLeave(l.id, false)}>Tolak</button><button type="button" className="btn btn-primary btn-sm" onClick={() => decideLeave(l.id, true)}>Setujui</button></>}{canCancelLeave(l) && <button type="button" className="btn btn-ghost btn-sm" onClick={() => window.confirm(`Batalkan cuti ${user(l.userId).name} (${fmtDate(l.startDate)} – ${fmtDate(l.endDate)})?`) && cancelLeave(l.id)}>Batalkan</button>}</div></div>)}
       </section>
       <Modal open={open} onClose={() => setOpen(false)} title="Ajukan cuti" footer={<><button type="button" className="btn btn-outline" onClick={() => setOpen(false)}>Batal</button><button type="button" className="btn btn-primary" disabled={!f.reason.trim() || f.endDate < f.startDate} onClick={() => { addLeave({ ...f, type: f.type as never }); setOpen(false); setF({ ...f, reason: '' }); }}>Kirim</button></>}>
         <div className="flex flex-col gap-4">

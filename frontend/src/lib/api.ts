@@ -86,7 +86,7 @@ export function saveBlob(blob: Blob, filename: string, open = false) {
 export type Role = 'owner' | 'admin' | 'member' | 'superadmin' | 'client';
 export interface ApiUser { id: number; name: string; email: string; role: Role; workspace_id: number; workspace_name: string; is_superadmin?: boolean }
 export interface Change { c: string; id: string; data: unknown | null }
-export interface PullResult { empty: boolean; rev: number; collections: Record<string, unknown[]> }
+export interface PullResult { empty: boolean; rev: number; role?: Role; collections: Record<string, unknown[]> }
 export interface ApiMember { id: number; name: string; email: string; role: Role }
 export interface ApiInvite { id: number; email: string; role: Role; token: string; created_at: string }
 export interface ApiToken { id: number; name: string; created_at: string; last_used_at: string | null }

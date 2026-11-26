@@ -105,16 +105,69 @@ describe('sinkronisasi: hak akses per peran', () => {
 
   it('penolakan atomik: perubahan sah dalam push yang sama ikut dibatalkan', async () => {
     const { member } = await team();
-    await push(member.token, [task('t-ok'), { c: 'invoices', id: 'i', data: { id: 'i' } }]).expect(403);
+    await push(member.token, [task('t-ok', 'Tugas', { createdBy: member.me }), { c: 'invoices', id: 'i', data: { id: 'i' } }]).expect(403);
     expect(await prisma.records.count({ where: { rid: 't-ok' } })).toBe(0);
   });
 
   it('anggota bebas bekerja di tugas/proyek/komentar dan memperbarui profilnya sendiri saja', async () => {
     const { member } = await team();
-    await push(member.token, [task('t1')]).expect(200);
-    await push(member.token, [{ c: 'comments', id: 'c1', data: { id: 'c1' } }]).expect(200);
+    await push(member.token, [task('t1', 'Tugas', { createdBy: member.me })]).expect(200);
+    await push(member.token, [{ c: 'comments', id: 'c1', data: { id: 'c1', userId: member.me } }]).expect(200);
     await push(member.token, [{ c: 'members', id: member.me, data: { id: member.me, name: 'Saya' } }]).expect(200);
     await push(member.token, [{ c: 'members', id: 'u99999', data: { id: 'u99999' } }]).expect(403);
+  });
+
+  it('menghapus proyek hanya boleh pemilik/admin; anggota tetap boleh membuat dan mengubah', async () => {
+    const project = (name: string) => [{ c: 'projects', id: 'p1', data: { id: 'p1', name, status: 'active' } }];
+    const { owner, member } = await team();
+    await push(member.token, project('Awal')).expect(200);
+    await push(member.token, project('Diubah')).expect(200);
+
+    // Ditolak utuh: tugas dalam push yang sama juga tidak terhapus.
+    await push(owner.token, [task('t1')]).expect(200);
+    await push(member.token, [{ c: 'tasks', id: 't1', data: null }, { c: 'projects', id: 'p1', data: null }]).expect(403);
+    await push(member.token, [{ c: 'projects', id: 'p1' }]).expect(403); // tanpa data = hapus juga
+    expect((await pull(owner.token)).body.collections).toMatchObject({ projects: [{ name: 'Diubah' }], tasks: [{ id: 't1' }] });
+
+    await push(owner.token, [{ c: 'projects', id: 'p1', data: null }]).expect(200);
+    expect((await pull(member.token)).body.collections.projects).toEqual([]);
+
+    const { member: admin } = await team('admin');
+    await push(admin.token, project('Lain')).expect(200);
+    await push(admin.token, [{ c: 'projects', id: 'p1', data: null }]).expect(200);
+  });
+
+  it.each([
+    ['id di dalam data diganti', 'p1', { id: 'lain', name: 'X', status: 'active' }],
+    ['isi dikosongkan', 'p1', {}],
+    ['nama dikosongkan', 'p1', { id: 'p1', name: '  ', status: 'active' }],
+    ['nama bukan teks', 'p1', { id: 'p1', name: 5, status: 'active' }],
+    ['status diubah jadi selesai', 'p1', { id: 'p1', name: 'Asli', status: 'completed' }],
+    ['status dibuang', 'p1', { id: 'p1', name: 'Asli' }],
+    ['id beda huruf besar/kecil', 'P1', { id: 'P1', name: 'X', status: 'active' }],
+    ['id dengan spasi di akhir', 'p1 ', { id: 'p1 ', name: 'X', status: 'active' }],
+    ['data false', 'p1', false],
+    ['data null', 'p1', null],
+  ])('anggota tidak bisa "menghapus" proyek dengan cara lain: %s', async (_n, id, data) => {
+    const { owner, member } = await team();
+    const original = { id: 'p1', name: 'Asli', status: 'active' };
+    await push(owner.token, [{ c: 'projects', id: 'p1', data: original }]).expect(200);
+    const r = await push(member.token, [{ c: 'projects', id, data }]);
+    const rows = (await pull(owner.token)).body.collections.projects;
+    expect(rows).toContainEqual(original);
+    expect([403, 422]).toContain(r.status);
+  });
+
+  it('akun workspace lain dan admin yang diturunkan jadi anggota tidak bisa menghapus proyek', async () => {
+    const { owner, member } = await team();
+    const outsider = await signUp();
+    const original = { id: 'p1', name: 'Asli', status: 'active' };
+    await push(owner.token, [{ c: 'projects', id: 'p1', data: original }]).expect(200);
+    await push(outsider.token, [{ c: 'projects', id: 'p1', data: null }]);
+    await prisma.users.update({ where: { id: BigInt(member.me.slice(1)) }, data: { role: 'admin' } });
+    await prisma.users.update({ where: { id: BigInt(member.me.slice(1)) }, data: { role: 'member' } });
+    await push(member.token, [{ c: 'projects', id: 'p1', data: null }]).expect(403); // peran selalu dibaca dari database
+    expect((await pull(owner.token)).body.collections.projects).toEqual([original]);
   });
 
   it('catatan waktu/absensi: hanya milik sendiri', async () => {

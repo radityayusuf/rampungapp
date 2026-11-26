@@ -193,7 +193,7 @@ const TopLink: React.FC<{ to: string; active: boolean; children: React.ReactNode
 );
 
 const TopBar: React.FC<{ route: Route; openMenu: () => void }> = ({ route, openMenu }) => {
-  const { workspace, projects, notifications, me, account, setModal, openCreateTask, logout } = useApp();
+  const { workspace, projects, notifications, me, account, setModal, openCreateTask, logout, canManage } = useApp();
   const unread = notifications.filter((n) => n.userId === me.id && !n.read).length;
   const m = workspace.enabledModules;
   const isSuperAdmin = account?.is_superadmin === true || me.role === 'superadmin'; // ditentukan server, bukan daftar email di klien
@@ -203,7 +203,7 @@ const TopBar: React.FC<{ route: Route; openMenu: () => void }> = ({ route, openM
   const closeNotif = useCallback(() => setNotifOpen(false), []);
   const moduleItems = [
     m.crm && { to: href.crm(), label: 'CRM Klien', icon: <Users size={15} /> },
-    m.finance && { to: href.keuangan, label: 'Keuangan', icon: <Wallet size={15} /> },
+    m.finance && canManage && { to: href.keuangan, label: 'Keuangan', icon: <Wallet size={15} /> },
     m.timeTracking && { to: href.time, label: 'Time Tracking', icon: <Clock size={15} /> },
     m.sdm && { to: href.sdm, label: 'SDM', icon: <UserCheck size={15} /> },
     m.integrations && { to: href.integrasi, label: 'Integrasi', icon: <Zap size={15} /> },

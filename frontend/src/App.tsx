@@ -16,7 +16,7 @@ const MyTasksPage = lazyPage(() => import('./pages/CorePages'), 'MyTasksPage');
 const ProjectPage = lazyPage(() => import('./pages/ProjectPage'), 'ProjectPage');
 const TaskPage = lazyPage(() => import('./pages/TaskPage'), 'TaskPage');
 const CrmPage = lazyPage(() => import('./pages/ModulePages'), 'CrmPage');
-const FinancePage = lazyPage(() => import('./pages/ModulePages'), 'FinancePage');
+const FinancePage = lazyPage(() => import('./pages/FinancePage'), 'FinancePage');
 const SdmPage = lazyPage(() => import('./pages/ModulePages'), 'SdmPage');
 const TimePage = lazyPage(() => import('./pages/ModulePages'), 'TimePage');
 const SettingsPage = lazyPage(() => import('./pages/SettingsPage'), 'SettingsPage');

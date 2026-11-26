@@ -44,7 +44,7 @@ const SectionTitle: React.FC<{ children: React.ReactNode; right?: React.ReactNod
 export const TaskPage: React.FC<{ taskId: string }> = ({ taskId }) => {
   const {
     tasks, projects, comments, activities, timeEntries, users, user, me,
-    updateTask, deleteTask, moveTask, toggleSubtask, addSubtask, deleteSubtask, addComment, deleteAttachment, uploadAttachment,
+    updateTask, canDeleteTask, deleteTask, moveTask, toggleSubtask, addSubtask, deleteSubtask, addComment, deleteAttachment, uploadAttachment,
     timer, timerSeconds, startTimer, stopTimer, workspace, notify, taskKey,
   } = useApp();
 
@@ -104,8 +104,7 @@ export const TaskPage: React.FC<{ taskId: string }> = ({ taskId }) => {
     notify(watching ? 'Berhenti mengamati' : 'Anda mengamati tiket ini', key, 'success');
   };
   const remove = () => {
-    if (window.confirm(`Hapus tiket "${key}: ${t.title}"?`)) {
-      deleteTask(t.id);
+    if (window.confirm(`Hapus tiket "${key}: ${t.title}"?`) && deleteTask(t.id)) {
       go(p ? href.proyek(p.id) : href.beranda);
     }
   };
@@ -162,7 +161,7 @@ export const TaskPage: React.FC<{ taskId: string }> = ({ taskId }) => {
             {menu && (
               <div role="menu" className="absolute right-0 top-[calc(100%+4px)] z-30 w-52 rounded-xl border border-line bg-white p-1.5 shadow-pop">
                 <button type="button" role="menuitem" onClick={() => { setMenu(false); copyKey(); }} className="flex h-9 w-full cursor-pointer items-center gap-2 rounded-lg border-0 bg-transparent px-2.5 text-left text-[13.5px] hover:bg-canvas"><Copy size={14} />Salin kunci tiket</button>
-                <button type="button" role="menuitem" aria-label="Hapus tugas" onClick={() => { setMenu(false); remove(); }} className="flex h-9 w-full cursor-pointer items-center gap-2 rounded-lg border-0 bg-transparent px-2.5 text-left text-[13.5px] hover:bg-danger-soft" style={{ color: '#B42318' }}><Trash2 size={14} />Hapus tiket</button>
+                {canDeleteTask(t) && <button type="button" role="menuitem" aria-label="Hapus tugas" onClick={() => { setMenu(false); remove(); }} className="flex h-9 w-full cursor-pointer items-center gap-2 rounded-lg border-0 bg-transparent px-2.5 text-left text-[13.5px] hover:bg-danger-soft" style={{ color: '#B42318' }}><Trash2 size={14} />Hapus tiket</button>}
               </div>
             )}
           </div>

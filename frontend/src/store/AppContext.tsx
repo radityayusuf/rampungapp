@@ -5,7 +5,7 @@ import type {
   ModuleKey, Notification, Project, Space, Task, TaskStatus, TimeEntry, User, Workspace,
 } from '../types';
 import { getPlanCatalog } from '../lib/plans';
-import { addDays, buildTaskKeys, fmtClock, nextTaskNum, relDay, todayISO, uid, errMsg } from '../lib/format';
+import { addDays, buildTaskKeys, fmtClock, fmtDate, nextTaskNum, relDay, todayISO, uid, errMsg } from '../lib/format';
 import { TEMPLATES } from '../lib/templates';
 import { PLAN_RANK, STATUS } from '../lib/meta';
 import { ApiError, api, clearToken, getToken, setToken } from '../lib/api';
@@ -177,7 +177,9 @@ interface Ctx extends Data {
   /** Kunci tiket berurutan, mis. RTK-12. */
   taskKey: (taskId: string) => string;
   updateTask: (id: string, patch: Partial<Task>) => void;
-  deleteTask: (id: string) => void;
+  /** Pemilik/admin: semua tugas. Anggota: hanya buatannya sendiri (sama dengan aturan server). */
+  canDeleteTask: (t: Task) => boolean;
+  deleteTask: (id: string) => boolean;
   moveTask: (id: string, status: TaskStatus) => void;
   toggleSubtask: (taskId: string, subId: string) => void;
   addSubtask: (taskId: string, title: string) => void;
@@ -191,6 +193,8 @@ interface Ctx extends Data {
   /** null bila ditolak (mis. batas proyek aktif paket Gratis). */
   createProject: (p: Partial<Project> & { name: string }, templateKey?: string) => Project | null;
   updateProject: (id: string, patch: Partial<Project>) => void;
+  /** Hanya pemilik/admin. Catatan jam kerja, pengeluaran, dan invoice tetap disimpan. */
+  deleteProject: (id: string) => boolean;
   createSpace: (name: string) => string;
 
   // timer
@@ -199,6 +203,9 @@ interface Ctx extends Data {
   startTimer: (taskId: string) => void;
   stopTimer: () => void;
   addTimeEntry: (e: Omit<TimeEntry, 'id'>) => void;
+  canEditTime: (e: TimeEntry) => boolean;
+  updateTimeEntry: (id: string, patch: Partial<TimeEntry>) => void;
+  deleteTimeEntry: (id: string) => void;
 
   // modul & paket
   toggleModule: (k: ModuleKey) => boolean;
@@ -208,22 +215,32 @@ interface Ctx extends Data {
   // crm
   addClient: (c: Omit<Client, 'id'>) => Client;
   updateClient: (id: string, patch: Partial<Client>) => void;
-  deleteClient: (id: string) => void;
+  /** false bila ditolak (bukan pemilik/admin, atau klien masih punya invoice). */
+  deleteClient: (id: string) => boolean;
   createDeal: (d: Omit<Deal, 'id' | 'createdAt'>, newClient?: Omit<Client, 'id'>) => void;
   moveDeal: (id: string, stage: DealStage) => void;
+  updateDeal: (id: string, patch: Partial<Deal>) => void;
   deleteDeal: (id: string) => void;
 
   // keuangan
-  createInvoice: (i: Omit<Invoice, 'id' | 'number' | 'status'>) => Invoice;
+  /** null bila nomor sudah dipakai. */
+  createInvoice: (i: Omit<Invoice, 'id' | 'status' | 'billTo'>) => Invoice | null;
+  updateInvoice: (id: string, patch: Partial<Invoice>) => boolean;
+  setInvoiceStatus: (id: string, status: 'void' | 'unpaid') => void;
   /** Tandai lunas SECARA MANUAL (transfer/tunai). Pembayaran QRIS dilunasi oleh server lewat Midtrans, bukan lewat fungsi ini. */
   markInvoicePaid: (id: string) => void;
   addExpense: (e: Omit<Expense, 'id'>) => void;
+  updateExpense: (id: string, patch: Partial<Expense>) => void;
+  deleteExpense: (id: string) => void;
 
   // sdm
   checkIn: () => void;
   checkOut: () => void;
   addLeave: (l: Omit<LeaveRequest, 'id' | 'status' | 'userId'>) => void;
   decideLeave: (id: string, ok: boolean) => void;
+  /** Pengaju selama masih menunggu; pemilik/admin kapan saja (sama dengan aturan server). */
+  canCancelLeave: (l: LeaveRequest) => boolean;
+  cancelLeave: (id: string) => void;
 
   // otomasi
   addAutomation: (r: Omit<AutomationRule, 'id' | 'runCount' | 'isActive'>) => void;
@@ -283,8 +300,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try { localStorage.removeItem(LEGACY_LOCAL_KEY); } catch { /* penyimpanan dinonaktifkan */ }
   }, []);
 
+  // Timer disimpan per akun di browser ini, jadi tetap berjalan walau halaman dimuat ulang atau dibuka di tab lain.
+  const timerKey = account ? `rampung_timer_${account.id}` : null;
+  const changeTimer = useCallback((t: ActiveTimer | null) => {
+    setTimer(t);
+    if (!timerKey) return;
+    try {
+      if (t) localStorage.setItem(timerKey, JSON.stringify(t));
+      else localStorage.removeItem(timerKey);
+    } catch { /* penyimpanan dinonaktifkan: timer hanya hidup di halaman ini */ }
+  }, [timerKey]);
+  useEffect(() => {
+    const read = () => {
+      try {
+        const t = timerKey ? (JSON.parse(localStorage.getItem(timerKey) ?? 'null') as ActiveTimer | null) : null;
+        setTimer(t && typeof t.taskId === 'string' && Number.isFinite(t.startedAt) && t.startedAt <= Date.now() ? t : null);
+      } catch { setTimer(null); }
+    };
+    read();
+    const onStorage = (e: StorageEvent) => { if (timerKey && e.key === timerKey) read(); };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [timerKey]);
+  // Tugasnya sudah dihapus orang lain: timer tidak punya tempat mencatat lagi.
+  useEffect(() => {
+    if (timer && data.loggedIn && !booting && !data.tasks.some((t) => t.id === timer.taskId)) changeTimer(null);
+  }, [timer, data.loggedIn, data.tasks, booting, changeTimer]);
+
   useEffect(() => {
     if (!timer) return;
+    setNow(Date.now());
     const i = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(i);
   }, [timer]);
@@ -304,7 +349,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return account ? { ...m, role: account.role } : m;
   }, [data.members, meId, account]);
   const user = useCallback(
-    (id: string): User => data.members.find((u) => u.id === id) ?? { id, name: 'Anggota lama', shortName: 'Anggota lama', initials: '?', color: '#8A949B', email: '', role: 'member' },
+    (id: string): User => data.members.find((u) => u.id === id) ?? (id === 'system' ? { id, name: 'Rampung', shortName: 'Rampung', initials: 'R', color: '#0F9D8A', email: '', role: 'member' } : undefined) ?? { id, name: 'Anggota lama', shortName: 'Anggota lama', initials: '?', color: '#8A949B', email: '', role: 'member' },
     [data.members],
   );
   // Pemilik/admin boleh mengelola paket, modul, otomasi, keuangan, CRM, dan persetujuan cuti (sama dengan aturan server).
@@ -319,6 +364,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // ---------- Sinkronisasi dengan server ----------
   const applyPull = useCallback((res: PullResult, acc: ApiUser) => {
     revRef.current = res.rev;
+    // Peran bisa diubah pemilik saat layar ini terbuka; hak tampilan mengikuti peran terkini dari server.
+    if (res.role && res.role !== acc.role) acc = { ...acc, role: res.role };
     setAccount(acc);
     if (res.empty) {
       // Workspace baru bersih (tanpa data dummy/contoh)
@@ -483,7 +530,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const createTask: Ctx['createTask'] = (t) => {
     const nowIso = new Date().toISOString();
     const full: Task = {
-      id: uid('t'), num: nextTaskNum(data.tasks, t.projectId), description: '', status: 'todo', priority: 'medium', assigneeId: me.id, watcherIds: [], label: 'Manajemen',
+      id: uid('t'), description: '', status: 'todo', priority: 'medium', assigneeId: me.id, watcherIds: [], label: 'Manajemen',
       startDate: todayISO(), dueDate: relDay(3), loggedSeconds: 0, subtasks: [], dependencies: [], attachments: [],
       createdBy: me.id, createdAt: nowIso, updatedAt: nowIso, ...t,
     };
@@ -491,18 +538,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const notifs = full.assigneeId !== me.id
         ? [{ id: uid('n'), userId: full.assigneeId, actorId: me.id, kind: 'assign' as const, text: `menugaskan kamu ke "${full.title}"`, taskId: full.id, read: false, createdAt: nowIso }, ...d.notifications]
         : d.notifications;
-      return { tasks: [full, ...d.tasks], notifications: notifs, activities: log(d, `membuat tugas "${full.title}"`, full.id, full.projectId) };
+      // Nomor dihitung dari data terbaru di dalam patch, agar beberapa tugas yang dibuat sekaligus tidak kembar.
+      return { tasks: [{ ...full, num: full.num ?? nextTaskNum(d.tasks, full.projectId) }, ...d.tasks], notifications: notifs, activities: log(d, `membuat tugas "${full.title}"`, full.id, full.projectId) };
     });
     notify('Tugas dibuat', `"${full.title}" ditambahkan ke proyek.`, 'success');
+    data.automations.filter((a) => a.isActive && a.trigger === 'task_created').forEach((r) => { void runAutomation(r, full, full.status); });
     return full;
   };
 
   const updateTask: Ctx['updateTask'] = (id, p) =>
     patch((d) => ({ tasks: d.tasks.map((t) => (t.id === id ? { ...t, ...p, updatedAt: new Date().toISOString() } : t)) }));
 
+  const canDeleteTask: Ctx['canDeleteTask'] = (t) => canManage || t.createdBy === me.id;
+
   const deleteTask: Ctx['deleteTask'] = (id) => {
+    const t = data.tasks.find((x) => x.id === id);
+    if (!t) return false;
+    if (!canDeleteTask(t)) {
+      notify('Tidak bisa menghapus tugas ini', 'Anggota hanya boleh menghapus tugas buatannya sendiri. Minta pemilik atau admin.');
+      return false;
+    }
+    if (timer?.taskId === id) stopTimer(); // jam kerjanya tetap tercatat
     patch((d) => ({ tasks: d.tasks.filter((t) => t.id !== id).map((t) => ({ ...t, dependencies: t.dependencies.filter((x) => x !== id) })) }));
     notify('Tugas dihapus');
+    return true;
   };
 
   const bumpRun = (ruleId: string) =>
@@ -636,6 +695,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return;
       } catch (err) {
         notify('Gagal mengunggah', errMsg(err, 'Gagal menyimpan ke server'));
+        return; // berkas tidak tersimpan, jadi jangan tampil sebagai lampiran
       }
     }
     addAttachment(taskId, file.name, file.size);
@@ -679,6 +739,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateProject: Ctx['updateProject'] = (id, p) => patch((d) => ({ projects: d.projects.map((x) => (x.id === id ? { ...x, ...p } : x)) }));
 
+  const deleteProject: Ctx['deleteProject'] = (id) => {
+    if (!manage()) return false;
+    const project = data.projects.find((p) => p.id === id);
+    if (!project) return false;
+    // Timer yang sedang berjalan di proyek ini dihentikan dulu agar jam kerjanya tetap tercatat.
+    if (timer && data.tasks.some((t) => t.id === timer.taskId && t.projectId === id)) stopTimer();
+    patch((d) => {
+      const gone = new Set(d.tasks.filter((t) => t.projectId === id).map((t) => t.id));
+      const onGoneTask = (x: { taskId?: string }) => !!x.taskId && gone.has(x.taskId);
+      return {
+        projects: d.projects.filter((p) => p.id !== id),
+        tasks: d.tasks.filter((t) => !gone.has(t.id)).map((t) => (t.dependencies.some((x) => gone.has(x)) ? { ...t, dependencies: t.dependencies.filter((x) => !gone.has(x)) } : t)),
+        comments: d.comments.filter((c) => !onGoneTask(c)),
+        notifications: d.notifications.filter((n) => !onGoneTask(n)),
+        activities: log({ ...d, activities: d.activities.filter((a) => a.projectId !== id && !onGoneTask(a)) }, `menghapus proyek "${project.name}"`),
+      };
+    });
+    notify('Proyek dihapus', `"${project.name}" beserta tugasnya sudah dihapus.`, 'success');
+    return true;
+  };
+
   const createSpace: Ctx['createSpace'] = (name) => {
     const id = uid('sp');
     patch((d) => ({ spaces: [...d.spaces, { id, name, description: '' }] }));
@@ -689,19 +770,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // ---------- Timer ----------
   const timerSeconds = timer ? Math.max(0, Math.floor((now - timer.startedAt) / 1000)) : 0;
 
-  const addTimeEntry: Ctx['addTimeEntry'] = (e) => patch((d) => ({ timeEntries: [{ ...e, id: uid('te') }, ...d.timeEntries] }));
+  /** Total jam di tugas selalu mengikuti catatan waktunya. */
+  const shiftLogged = (tasks: Task[], taskId: string | undefined, delta: number) =>
+    taskId && delta ? tasks.map((t) => (t.id === taskId ? { ...t, loggedSeconds: Math.max(0, t.loggedSeconds + delta) } : t)) : tasks;
+
+  const addTimeEntry: Ctx['addTimeEntry'] = (e) => {
+    patch((d) => ({ timeEntries: [{ ...e, id: uid('te') }, ...d.timeEntries], tasks: shiftLogged(d.tasks, e.taskId, e.durationSeconds) }));
+    notify('Waktu dicatat', e.taskTitle, 'success');
+  };
+
+  /** Catatan waktu hanya boleh diubah pemiliknya atau pemilik/admin (sama dengan aturan server). */
+  const canEditTime: Ctx['canEditTime'] = (e) => canManage || e.userId === me.id;
+
+  const updateTimeEntry: Ctx['updateTimeEntry'] = (id, p) => {
+    const cur = data.timeEntries.find((e) => e.id === id);
+    if (!cur || !canEditTime(cur)) return;
+    const next = { ...cur, ...p };
+    patch((d) => ({
+      timeEntries: d.timeEntries.map((e) => (e.id === id ? next : e)),
+      tasks: shiftLogged(shiftLogged(d.tasks, cur.taskId, -cur.durationSeconds), next.taskId, next.durationSeconds),
+    }));
+    notify('Catatan waktu diperbarui', next.taskTitle, 'success');
+  };
+
+  const deleteTimeEntry: Ctx['deleteTimeEntry'] = (id) => {
+    const cur = data.timeEntries.find((e) => e.id === id);
+    if (!cur || !canEditTime(cur)) return;
+    patch((d) => ({ timeEntries: d.timeEntries.filter((e) => e.id !== id), tasks: shiftLogged(d.tasks, cur.taskId, -cur.durationSeconds) }));
+    notify('Catatan waktu dihapus', cur.taskTitle);
+  };
 
   const stopTimer = () => {
     if (!timer) return;
     const secs = Math.floor((Date.now() - timer.startedAt) / 1000);
     const t = data.tasks.find((x) => x.id === timer.taskId);
-    setTimer(null);
+    changeTimer(null);
     if (secs >= 5 && t) {
       patch((d) => ({
         timeEntries: [{ id: uid('te'), taskId: t.id, taskTitle: t.title, projectId: t.projectId, userId: me.id, date: todayISO(), durationSeconds: secs, isBillable: true }, ...d.timeEntries],
         tasks: d.tasks.map((x) => (x.id === t.id ? { ...x, loggedSeconds: x.loggedSeconds + secs } : x)),
       }));
-      notify('Timer disimpan', `${fmtClock(secs)} dicatat ke timesheet.`, 'success');
+      if (secs > 12 * 3600) notify('Timer berjalan lebih dari 12 jam', `${fmtClock(secs)} dicatat. Periksa dan betulkan di Time Tracking bila timer lupa dihentikan.`);
+      else notify('Timer disimpan', `${fmtClock(secs)} dicatat ke timesheet.`, 'success');
     } else {
       notify('Timer dihentikan', 'Kurang dari 5 detik, tidak dicatat.');
     }
@@ -709,7 +819,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const startTimer = (taskId: string) => {
     if (timer) stopTimer();
-    setTimer({ taskId, startedAt: Date.now() });
+    changeTimer({ taskId, startedAt: Date.now() });
     const t = data.tasks.find((x) => x.id === taskId);
     notify('Timer berjalan', t?.title);
   };
@@ -753,11 +863,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteClient: Ctx['deleteClient'] = (id) => {
+    if (!manage()) return false;
+    const n = data.invoices.filter((i) => i.clientId === id).length;
+    if (n) {
+      notify('Klien tidak bisa dihapus', `Klien ini punya ${n} invoice yang harus tetap tersimpan. Ubah statusnya menjadi "Klien lama".`);
+      return false;
+    }
     patch((d) => ({
       clients: d.clients.filter((c) => c.id !== id),
       deals: d.deals.filter((x) => x.clientId !== id),
+      projects: d.projects.map((p) => (p.clientId === id ? { ...p, clientId: undefined, clientPortalEnabled: false } : p)),
     }));
     notify('Klien dihapus', undefined, 'info');
+    return true;
   };
 
   const createDeal: Ctx['createDeal'] = (deal, newClient) => {
@@ -777,24 +895,68 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const updateDeal: Ctx['updateDeal'] = (id, p) => {
+    patch((d) => ({ deals: d.deals.map((x) => (x.id === id ? { ...x, ...p } : x)) }));
+    notify('Deal diperbarui', undefined, 'success');
+  };
+
   const deleteDeal: Ctx['deleteDeal'] = (id) => {
+    if (!manage()) return;
     patch((d) => ({ deals: d.deals.filter((x) => x.id !== id) }));
     notify('Deal dihapus', undefined, 'info');
   };
 
   // ---------- Keuangan ----------
+  const billTo = (clientId: string) => {
+    const c = data.clients.find((x) => x.id === clientId);
+    return c ? { company: c.company, contact: c.contact } : undefined;
+  };
+
+  const numberTaken = (number: string, exceptId?: string) => data.invoices.some((x) => x.id !== exceptId && x.number.toLowerCase() === number.trim().toLowerCase());
+
   const createInvoice: Ctx['createInvoice'] = (i) => {
-    const n = data.invoices.length + 10 + 1;
-    const full: Invoice = { ...i, id: uid('inv'), number: `INV-2026-${String(n).padStart(3, '0')}`, status: 'unpaid' };
+    if (!manage()) return null;
+    if (numberTaken(i.number)) {
+      notify('Nomor invoice sudah dipakai', i.number);
+      return null;
+    }
+    const full: Invoice = { ...i, id: uid('inv'), status: 'unpaid', billTo: billTo(i.clientId) };
     patch((d) => ({ invoices: [full, ...d.invoices] }));
     notify('Invoice dibuat', full.number, 'success');
     return full;
   };
 
+  const updateInvoice: Ctx['updateInvoice'] = (id, p) => {
+    if (!manage()) return false;
+    const cur = data.invoices.find((x) => x.id === id);
+    if (!cur || cur.status !== 'unpaid') {
+      notify('Invoice tidak bisa diubah', 'Hanya invoice yang belum dibayar yang bisa diubah.');
+      return false;
+    }
+    if (p.number && numberTaken(p.number, id)) {
+      notify('Nomor invoice sudah dipakai', p.number);
+      return false;
+    }
+    patch((d) => ({ invoices: d.invoices.map((x) => (x.id === id ? { ...x, ...p, ...(p.clientId ? { billTo: billTo(p.clientId) ?? x.billTo } : {}) } : x)) }));
+    notify('Invoice diperbarui', p.number ?? cur.number, 'success');
+    return true;
+  };
+
+  /** Batalkan (arsip tetap ada), aktifkan lagi, atau koreksi salah tandai lunas. */
+  const setInvoiceStatus: Ctx['setInvoiceStatus'] = (id, status) => {
+    if (!manage()) return;
+    const cur = data.invoices.find((x) => x.id === id);
+    if (!cur || cur.status === status) return;
+    patch((d) => ({
+      invoices: d.invoices.map((x) => (x.id === id ? { ...x, status, voidAt: status === 'void' ? new Date().toISOString() : undefined, paidAt: undefined, paymentMethod: undefined } : x)),
+    }));
+    notify(status === 'void' ? 'Invoice dibatalkan' : 'Invoice dikembalikan ke belum dibayar', cur.number);
+  };
+
   const markInvoicePaid: Ctx['markInvoicePaid'] = (id) => {
     if (!manage()) return;
     const inv = data.invoices.find((x) => x.id === id);
-    if (!inv || inv.status === 'paid') return;
+    if (!inv || inv.status !== 'unpaid') return;
     patch((d) => ({ invoices: d.invoices.map((x) => (x.id === id ? { ...x, status: 'paid', paidAt: new Date().toISOString(), paymentMethod: 'manual' } : x)) }));
     notify('Invoice ditandai lunas', `${inv.number} dikonfirmasi manual.`, 'success');
   };
@@ -808,12 +970,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     notify('Pengeluaran dicatat', undefined, 'success');
   };
 
+  /** Anggaran terpakai proyek mengikuti pengeluarannya. */
+  const shiftSpent = (projects: Project[], projectId: string, delta: number) =>
+    delta ? projects.map((p) => (p.id === projectId ? { ...p, spent: Math.max(0, p.spent + delta) } : p)) : projects;
+
+  const updateExpense: Ctx['updateExpense'] = (id, p) => {
+    if (!manage()) return;
+    const cur = data.expenses.find((x) => x.id === id);
+    if (!cur) return;
+    const next = { ...cur, ...p };
+    patch((d) => ({
+      expenses: d.expenses.map((x) => (x.id === id ? next : x)),
+      projects: shiftSpent(shiftSpent(d.projects, cur.projectId, -cur.amount), next.projectId, next.amount),
+    }));
+    notify('Pengeluaran diperbarui', next.title, 'success');
+  };
+
+  const deleteExpense: Ctx['deleteExpense'] = (id) => {
+    if (!manage()) return;
+    const cur = data.expenses.find((x) => x.id === id);
+    if (!cur) return;
+    patch((d) => ({ expenses: d.expenses.filter((x) => x.id !== id), projects: shiftSpent(d.projects, cur.projectId, -cur.amount) }));
+    notify('Pengeluaran dihapus', cur.title);
+  };
+
   // ---------- SDM ----------
   const checkIn = () => {
     if (data.attendances.some((a) => a.userId === me.id && a.date === todayISO())) return notify('Sudah check-in hari ini');
     const hm = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace('.', ':');
     const late = new Date().getHours() * 60 + new Date().getMinutes() > 9 * 60 + 15;
-    patch((d) => ({ attendances: [{ id: uid('att'), userId: me.id, date: todayISO(), checkIn: hm, status: late ? 'terlambat' : 'hadir', location: 'Kantor Studio Nusa' }, ...d.attendances] }));
+    patch((d) => ({ attendances: [{ id: uid('att'), userId: me.id, date: todayISO(), checkIn: hm, status: late ? 'terlambat' : 'hadir' }, ...d.attendances] }));
     notify('Check-in berhasil', hm, 'success');
   };
 
@@ -826,6 +1012,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addLeave: Ctx['addLeave'] = (l) => {
     patch((d) => ({ leaves: [{ ...l, id: uid('lv'), userId: me.id, status: 'pending' }, ...d.leaves] }));
     notify('Pengajuan cuti terkirim', undefined, 'success');
+  };
+
+  const canCancelLeave: Ctx['canCancelLeave'] = (l) => canManage || (l.userId === me.id && l.status === 'pending');
+
+  const cancelLeave: Ctx['cancelLeave'] = (id) => {
+    const l = data.leaves.find((x) => x.id === id);
+    if (!l || !canCancelLeave(l)) return;
+    patch((d) => ({ leaves: d.leaves.filter((x) => x.id !== id) }));
+    notify('Cuti dibatalkan', `${user(l.userId).name} · ${fmtDate(l.startDate)} – ${fmtDate(l.endDate)}`);
   };
 
   const decideLeave: Ctx['decideLeave'] = (id, ok) => {
@@ -882,12 +1077,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setData(initial());
       } else patch(() => ({ loggedIn: false }));
     },
-    createTask, taskKey, updateTask, deleteTask, moveTask, toggleSubtask, addSubtask, deleteSubtask, addComment, addAttachment, deleteAttachment, uploadAttachment,
-    createProject, updateProject, createSpace,
-    timer, timerSeconds, startTimer, stopTimer, addTimeEntry,
+    createTask, taskKey, updateTask, canDeleteTask, deleteTask, moveTask, toggleSubtask, addSubtask, deleteSubtask, addComment, addAttachment, deleteAttachment, uploadAttachment,
+    createProject, updateProject, deleteProject, createSpace,
+    timer, timerSeconds, startTimer, stopTimer, addTimeEntry, canEditTime, updateTimeEntry, deleteTimeEntry,
     toggleModule, updateWorkspace, canUseModule,
-    addClient, updateClient, deleteClient, createDeal, moveDeal, deleteDeal, createInvoice, markInvoicePaid, addExpense,
-    checkIn, checkOut, addLeave, decideLeave,
+    addClient, updateClient, deleteClient, createDeal, moveDeal, updateDeal, deleteDeal, createInvoice, updateInvoice, setInvoiceStatus, markInvoicePaid, addExpense, updateExpense, deleteExpense,
+    checkIn, checkOut, addLeave, decideLeave, canCancelLeave, cancelLeave,
     addAutomation, toggleAutomation, deleteAutomation, markAllRead, markRead,
     createTaskOpen,
     openCreateTask: (o) => setCreateTaskOpen(o ?? {}),

@@ -70,4 +70,4 @@ export async function team(memberRole: 'member' | 'admin' = 'member') {
   return { owner, member };
 }
 
-export const task = (id: string, title = 'Tugas') => ({ c: 'tasks', id, data: { id, title, projectId: 'p1' } });
+export const task = (id: string, title = 'Tugas', extra: Record<string, unknown> = {}) => ({ c: 'tasks', id, data: { id, title, projectId: 'p1', ...extra } });

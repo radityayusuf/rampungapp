@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { prisma } from '../db';
 import { AuthRequest } from '../types';
 import { parseEmail, parseId } from '../validation';
+import { bumpRev } from '../services/rev';
 import { memberLimitError } from '../services/workspacePlan';
 
 function isAdmin(user: any): boolean {
@@ -85,6 +86,8 @@ export async function updateMember(req: AuthRequest, res: Response): Promise<voi
     where: { id: targetId },
     data: { role },
   });
+  // Hak lihat data ikut berubah: layar anggota yang sedang terbuka harus menarik ulang.
+  if (user.workspace_id) await bumpRev(user.workspace_id);
 
   res.json({ ok: true });
 }
