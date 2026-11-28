@@ -67,7 +67,7 @@ const Sidebar: React.FC<{ route: Route; close: () => void }> = ({ route, close }
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto p-3">
       <div className="flex items-center justify-between lg:hidden">
-        <a href={href.beranda} onClick={close}><Logo /></a>
+        <a href={href.beranda} onClick={close} aria-label="Rampung — beranda" className="px-1"><Logo size={24} /></a>
         <button type="button" aria-label="Tutup menu" onClick={close} className="btn-icon border-0"><X size={18} /></button>
       </div>
 
@@ -212,7 +212,7 @@ const TopBar: React.FC<{ route: Route; openMenu: () => void }> = ({ route, openM
   return (
     <header className="sticky top-0 z-40 flex h-14 items-center gap-1.5 border-b border-line bg-white/95 px-3 backdrop-blur sm:px-4">
       <button type="button" aria-label="Buka menu" onClick={openMenu} className="btn-icon border-0 lg:hidden"><Menu size={18} /></button>
-      <a href={href.beranda} aria-label="Rampung — beranda" className="mr-1 flex items-center rounded-lg px-1 py-1 hover:bg-line-soft"><span className="sm:hidden"><Logo size={28} onlyMark /></span><span className="hidden sm:inline"><Logo size={26} /></span></a>
+      <a href={href.beranda} aria-label="Rampung — beranda" className="mr-1 flex items-center rounded-lg px-1 py-1 hover:bg-line-soft"><span className="sm:hidden"><Logo size={26} onlyMark /></span><span className="hidden sm:inline"><Logo size={24} /></span></a>
 
       <nav aria-label="Navigasi utama" className="hidden items-center gap-0.5 lg:flex">
         <TopLink to={href.tugasSaya} active={route.page === 'tugas-saya'}>Pekerjaan Saya</TopLink>

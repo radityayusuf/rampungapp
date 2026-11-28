@@ -18,14 +18,14 @@ export const PortalPage: React.FC<{ token: string }> = ({ token }) => {
     return () => { alive = false; clearInterval(i); };
   }, [token]);
 
-  if (err) return <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-6 text-center"><Logo /><h1 className="m-0 text-xl font-extrabold">Portal tidak tersedia</h1><p className="m-0 max-w-sm text-sm text-arang-muted">{err}</p></div>;
+  if (err) return <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-6 text-center"><Logo size={28} /><h1 className="m-0 text-xl font-extrabold">Portal tidak tersedia</h1><p className="m-0 max-w-sm text-sm text-arang-muted">{err}</p></div>;
   if (!data) return <div className="flex min-h-screen items-center justify-center text-sm text-arang-muted" role="status">Memuat portal...</div>;
 
   const done = data.tasks.filter((t) => t.status === 'done').length;
   const v = pct(done, data.tasks.length);
   return (
     <div className="min-h-screen bg-canvas">
-      <header className="border-b border-line bg-white"><div className="mx-auto flex max-w-[960px] items-center justify-between gap-4 px-5 py-4"><Logo size={28} /><span className="text-[13px] text-arang-muted">Portal klien · {data.workspace}</span></div></header>
+      <header className="border-b border-line bg-white"><div className="mx-auto flex max-w-[960px] items-center justify-between gap-4 px-5 py-4"><Logo size={24} /><span className="text-[13px] text-arang-muted">Portal klien · {data.workspace}</span></div></header>
       <main className="mx-auto flex max-w-[960px] flex-col gap-5 px-5 py-8">
         <div className="flex flex-col gap-1"><span className="eyebrow">{data.client ?? 'Proyek'}</span><h1 className="page-title">{data.project.name}</h1>{data.project.description && <p className="m-0 mt-1 max-w-2xl text-[15px] text-arang-body">{data.project.description}</p>}</div>
         <section className="card flex flex-col gap-3 p-5"><div className="flex flex-wrap items-baseline justify-between gap-2"><span className="text-3xl font-extrabold" style={{ color: '#0B7A6B' }}>{v}%</span><span className="text-sm text-arang-muted">{done} dari {data.tasks.length} tugas rampung{data.project.dueDate ? ` · target ${fmtDateLong(data.project.dueDate)}` : ''}</span></div><Progress value={v} h={10} /></section>

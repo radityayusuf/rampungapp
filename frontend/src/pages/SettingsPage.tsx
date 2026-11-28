@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Copy, MessageCircle, Trash2 } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Camera, Copy, MessageCircle, Trash2 } from 'lucide-react';
 import { useApp } from '../store/AppContext';
 import { href } from '../store/router';
 import { Avatar, Field, PageHeader, Pill, Progress } from '../components/ui';
@@ -13,7 +13,7 @@ const inviteLink = (t: string) => `${window.location.origin}/${href.gabung(t)}`;
 const fmtBytes = (n: number) => (n < 1024 ? `${n} B` : n < 1024 ** 2 ? `${(n / 1024).toFixed(1).replace('.', ',')} KB` : n < 1024 ** 3 ? `${(n / 1024 ** 2).toFixed(1).replace('.', ',')} MB` : `${(n / 1024 ** 3).toFixed(2).replace('.', ',')} GB`);
 
 export const SettingsPage: React.FC = () => {
-  const { workspace, users, me, mode, account, setModal, projects, updateWorkspace, renameMe, updateMyPhone, removeMemberRecord, notify, integrations, refreshIntegrations } = useApp();
+  const { workspace, users, me, mode, account, setModal, projects, updateWorkspace, renameMe, updateMyPhone, setMyAvatar, removeMyAvatar, removeMemberRecord, notify, integrations, refreshIntegrations } = useApp();
   const plan = workspace.plan.charAt(0).toUpperCase() + workspace.plan.slice(1);
   const isAdmin = me.role === 'owner' || me.role === 'admin' || me.role === 'superadmin';
   const catalog = usePlanCatalog();
@@ -24,6 +24,21 @@ export const SettingsPage: React.FC = () => {
   const [wsName, setWsName] = useState(workspace.name);
   const [myName, setMyName] = useState(me.name);
   const [myPhone, setMyPhone] = useState(me.phone ?? '');
+  const photoInput = useRef<HTMLInputElement>(null);
+  const [photoBusy, setPhotoBusy] = useState<'upload' | 'remove' | null>(null);
+  const [photoErr, setPhotoErr] = useState('');
+  const pickPhoto = async (file?: File) => {
+    if (!file) return;
+    setPhotoErr('');
+    setPhotoBusy('upload');
+    try { await setMyAvatar(file); } catch (e) { setPhotoErr(e instanceof Error ? e.message : 'Foto gagal diunggah.'); } finally { setPhotoBusy(null); }
+  };
+  const dropPhoto = async () => {
+    if (!window.confirm('Hapus foto profil? Inisial nama akan tampil kembali.')) return;
+    setPhotoErr('');
+    setPhotoBusy('remove');
+    try { await removeMyAvatar(); } catch (e) { setPhotoErr(e instanceof Error ? e.message : 'Foto gagal dihapus.'); } finally { setPhotoBusy(null); }
+  };
   useEffect(() => { void refreshIntegrations(); }, [refreshIntegrations]);
   const [members, setMembers] = useState<ApiMember[]>([]);
   const [invites, setInvites] = useState<ApiInvite[]>([]);
@@ -67,6 +82,22 @@ export const SettingsPage: React.FC = () => {
 
       <div className="grid gap-4 md:grid-cols-2">
         <section className="card flex flex-col gap-3 p-5"><h2 className="card-title">Profil saya</h2>
+          <div className="flex items-center gap-4">
+            <button type="button" aria-label={me.avatarUrl ? 'Ganti foto profil' : 'Unggah foto profil'} disabled={!server || !!photoBusy} onClick={() => photoInput.current?.click()} className="group relative shrink-0 cursor-pointer rounded-full border-0 bg-transparent p-0 disabled:cursor-default">
+              <Avatar userId={me.id} size={72} />
+              {server && <span aria-hidden="true" className="absolute inset-0 flex items-center justify-center rounded-full bg-arang/50 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"><Camera size={20} /></span>}
+              {photoBusy && <span aria-hidden="true" className="absolute inset-0 flex items-center justify-center rounded-full bg-white/70"><span className="h-6 w-6 animate-spin rounded-full border-2 border-brand border-t-transparent" /></span>}
+            </button>
+            <div className="flex min-w-0 flex-col gap-2">
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className="btn btn-outline btn-sm" disabled={!server || !!photoBusy} onClick={() => photoInput.current?.click()}><Camera size={14} />{photoBusy === 'upload' ? 'Mengunggah…' : me.avatarUrl ? 'Ganti foto' : 'Unggah foto'}</button>
+                {me.avatarUrl && <button type="button" className="btn btn-ghost btn-sm" disabled={!!photoBusy} onClick={dropPhoto}>{photoBusy === 'remove' ? 'Menghapus…' : 'Hapus foto'}</button>}
+              </div>
+              <span className="text-xs text-arang-muted">{server ? 'JPG, PNG, atau WebP. Dipotong persegi otomatis.' : 'Tersedia setelah masuk dengan akun.'}</span>
+            </div>
+            <input ref={photoInput} type="file" accept="image/jpeg,image/png,image/webp,image/*" className="sr-only" tabIndex={-1} aria-hidden="true" onChange={(e) => { void pickPhoto(e.target.files?.[0]); e.target.value = ''; }} />
+          </div>
+          {photoErr && <span role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-[13px] font-semibold text-danger">{photoErr}</span>}
           <Field label="Nama" htmlFor="my-name"><input id="my-name" className="input" value={myName} onChange={(e) => setMyName(e.target.value)} /></Field>
           <span className="text-[13px] text-arang-muted">{account?.email ?? me.email} · {ROLE_LABEL[me.role]}</span>
           <button type="button" className="btn btn-outline self-start" disabled={!myName.trim() || myName.trim() === me.name} onClick={() => renameMe(myName).catch(fail)}>Simpan nama</button>

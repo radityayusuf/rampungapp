@@ -167,7 +167,7 @@ export const Login: React.FC<{ mode: 'masuk' | 'daftar'; invite?: string }> = ({
           <div className="absolute inset-0 opacity-[0.07]" style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '26px 26px' }} />
         </div>
 
-        <a href={href.landing} className="relative w-fit" aria-label="Rampung — halaman depan"><Logo size={34} dark /></a>
+        <a href={href.landing} className="relative w-fit" aria-label="Rampung — halaman depan"><Logo size={30} dark /></a>
 
         <div className="relative flex flex-col gap-8">
           <div className="flex flex-col gap-5">
@@ -211,7 +211,7 @@ export const Login: React.FC<{ mode: 'masuk' | 'daftar'; invite?: string }> = ({
       {/* ── Formulir ── */}
       <section className="relative flex min-w-0 flex-1 flex-col">
         <div className="flex items-center justify-between px-6 py-5 sm:px-10">
-          <a href={href.landing} className="lg:hidden" aria-label="Rampung — halaman depan"><Logo size={30} /></a>
+          <a href={href.landing} className="lg:hidden" aria-label="Rampung — halaman depan"><Logo size={26} /></a>
           <a href={href.landing} className="ml-auto text-[13.5px] font-semibold" style={{ color: '#5B6670' }}>← Kembali ke beranda</a>
         </div>
 

@@ -228,6 +228,8 @@ export const api = {
   me: () => call<{ user: ApiUser }>('/auth/me'),
   updateMe: (name: string) => call<{ user: ApiUser }>('/auth/me', { method: 'PATCH', body: { name } }),
   logout: () => call<{ ok: boolean }>('/auth/logout', { method: 'POST' }),
+  uploadAvatar: (image: Blob) => { const f = new FormData(); f.append('avatar', image, 'avatar.jpg'); return callForm<{ url: string }>('/auth/me/avatar', f); },
+  deleteAvatar: () => call<{ ok: boolean }>('/auth/me/avatar', { method: 'DELETE' }),
   pull: () => call<PullResult>('/sync'),
   rev: () => call<{ rev: number }>('/sync/rev'),
   push: (changes: Change[]) => call<{ ok: boolean; rev: number; prev: number }>('/sync', { method: 'POST', body: { changes } }),

@@ -1,33 +1,24 @@
-import React, { useEffect, useId, useRef } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
+import { API_BASE } from '../lib/api';
 import { ArrowDown, ArrowUp, Check, CheckCircle2, Equal, Info, MessageCircle, X } from 'lucide-react';
 import { useApp } from '../store/AppContext';
 import type { Priority, TaskStatus } from '../types';
 import { PRIORITY, STATUS, labelColors } from '../lib/meta';
 
-export const Logo: React.FC<{ size?: number; dark?: boolean; onlyMark?: boolean }> = ({ size = 30, dark, onlyMark }) => (
-  <span className="inline-flex items-center gap-2.5">
-    <svg width={size} height={size} viewBox="0 0 28 28" aria-hidden="true">
-      <rect width="28" height="28" rx="8" fill={dark ? '#0F9D8A' : '#0B7A6B'} />
-      <path d="M8 14.5l4 4 8-9" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-    {!onlyMark && (
-      <span className="text-xl font-extrabold tracking-[-0.3px]" style={{ color: dark ? '#fff' : '#1F2933' }}>
-        Rampung
-      </span>
-    )}
-  </span>
-);
+export { Logo, LogoMark } from './Logo';
 
 export const Avatar: React.FC<{ userId: string; size?: number; ring?: boolean; className?: string }> = ({ userId, size = 26, ring, className = '' }) => {
   const { user } = useApp();
   const u = user(userId);
+  const [broken, setBroken] = useState<string | null>(null);
+  const photo = u.avatarUrl && broken !== u.avatarUrl ? API_BASE + u.avatarUrl : null;
   return (
     <span
       title={u.name}
-      className={`inline-flex shrink-0 items-center justify-center rounded-full font-bold text-white ${ring ? 'border-2 border-canvas' : ''} ${className}`}
-      style={{ width: size, height: size, background: u.color, fontSize: Math.max(10, size * 0.38) }}
+      className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full font-bold text-white ${ring ? 'border-2 border-canvas' : ''} ${className}`}
+      style={{ width: size, height: size, background: photo ? '#E6E9E5' : u.color, fontSize: Math.max(10, size * 0.38) }}
     >
-      {u.initials}
+      {photo ? <img src={photo} alt="" width={size} height={size} loading="lazy" decoding="async" className="h-full w-full object-cover" onError={() => setBroken(u.avatarUrl ?? null)} /> : u.initials}
     </span>
   );
 };

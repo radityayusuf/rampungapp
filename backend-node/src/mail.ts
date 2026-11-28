@@ -31,6 +31,9 @@ export const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&
  * Kerangka email bermerek Rampung: tabel + gaya inline (aman untuk Gmail/Outlook), tombol utama,
  * tautan cadangan untuk disalin, dan catatan kaki. Semua parameter teks harus sudah di-escape.
  */
+/** Logo email diambil dari situs (FRONTEND_URL), karena email tidak bisa memuat berkas lokal. */
+const logoUrl = () => `${(process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '')}/brand/rampung-logo-email.png`;
+
 export function emailLayout(o: { preheader: string; title: string; bodyHtml: string; buttonText: string; buttonUrl: string; footnote: string }): string {
   const url = escapeHtml(o.buttonUrl);
   return `<!doctype html>
@@ -41,10 +44,7 @@ export function emailLayout(o: { preheader: string; title: string; bodyHtml: str
   <tr><td align="center">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
       <tr><td style="padding:0 4px 20px;">
-        <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-          <td style="background:#0B7A6B;border-radius:8px;width:32px;height:32px;text-align:center;color:#ffffff;font-size:18px;font-weight:700;line-height:32px;">&#10003;</td>
-          <td style="padding-left:10px;font-size:20px;font-weight:800;color:#1F2933;letter-spacing:-0.3px;">Rampung</td>
-        </tr></table>
+        <img src="${logoUrl()}" width="168" height="28" alt="rampung." style="display:block;border:0;outline:none;height:28px;width:168px;font-size:22px;font-weight:800;color:#10201F;letter-spacing:-0.5px;">
       </td></tr>
       <tr><td style="background:#ffffff;border:1px solid #E2E5E1;border-radius:16px;overflow:hidden;">
         <div style="height:5px;background:linear-gradient(90deg,#0F9D8A,#F2B33D);background-color:#0F9D8A;"></div>

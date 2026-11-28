@@ -7,6 +7,7 @@ import * as syncCtrl from '../controllers/sync';
 import * as teamCtrl from '../controllers/team';
 import * as portalCtrl from '../controllers/portal';
 import * as uploadsCtrl from '../controllers/uploads';
+import * as avatarCtrl from '../controllers/avatar';
 import * as integrationsCtrl from '../controllers/integrations';
 import * as systemCtrl from '../controllers/system';
 import * as billingCtrl from '../controllers/billing';
@@ -63,6 +64,7 @@ apiRouter.get('/plans', publicReadLimiter, (_req, res) => { res.json(publicCatal
 
 // ─── File Download (Publik / Token via URL) ───
 apiRouter.get('/uploads/:filename', wrap(uploadsCtrl.getFile));
+apiRouter.get('/avatars/:file', publicReadLimiter, wrap(avatarCtrl.getAvatar));
 
 // ─── Terautentikasi (Bearer Token) ───
 apiRouter.use(wrap(authMiddleware));
@@ -71,6 +73,8 @@ apiRouter.use(wrap(authMiddleware));
 apiRouter.get('/auth/me', wrap(authCtrl.me));
 apiRouter.patch('/auth/me', wrap(authCtrl.updateMe));
 apiRouter.post('/auth/logout', wrap(authCtrl.logout));
+apiRouter.post('/auth/me/avatar', userLimiter(20), avatarCtrl.avatarMiddleware.single('avatar'), wrap(avatarCtrl.uploadAvatar));
+apiRouter.delete('/auth/me/avatar', userLimiter(20), wrap(avatarCtrl.deleteAvatar));
 
 // Sinkronisasi data
 apiRouter.get('/sync', wrap(syncCtrl.pull));

@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { prisma } from '../db';
 import { AuthRequest } from '../types';
 import { broadcastSync } from '../socket';
+import { avatarPattern } from './avatar';
 import { LIMITS, PLAN_LABEL } from '../services/plans';
 import { activeProjectCount, isActiveProject, planOf, stampWorkspaceRecord } from '../services/workspacePlan';
 
@@ -62,6 +63,17 @@ function visible(user: any, collection: string, data: any): any | null {
     return data.status === 'approved' ? omit(data, LEAVE_PRIVATE) : null;
   }
   return data;
+}
+
+/** Foto profil hanya boleh menunjuk berkas milik anggota itu sendiri (bukan gambar luar/pelacak). */
+function badAvatar(changes: any[]): string | null {
+  for (const ch of changes) {
+    const url = ch.c === 'members' ? ch.data?.avatarUrl : undefined;
+    if (url !== undefined && url !== null && !(typeof url === 'string' && /^u\d+$/.test(ch.id) && avatarPattern(ch.id.slice(1)).test(url))) {
+      return 'Foto profil tidak valid.';
+    }
+  }
+  return null;
 }
 
 /** Alasan penolakan untuk anggota biasa, atau null bila boleh. Pemilik/admin/superadmin selalu boleh. */
@@ -253,6 +265,11 @@ export async function push(req: AuthRequest, res: Response): Promise<void> {
     return;
   }
 
+  const invalid = badAvatar(changes);
+  if (invalid) {
+    res.status(422).json({ message: invalid });
+    return;
+  }
   const denial = await denied(user, changes);
   if (denial) {
     res.status(403).json({ message: denial });

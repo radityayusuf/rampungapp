@@ -2,6 +2,7 @@ import React, { Suspense, lazy, useEffect } from 'react';
 import { AppShell } from './components/AppShell';
 import { GlobalModals } from './components/Modals';
 import { Toasts } from './components/ui';
+import { LogoMark, LogoWordmark } from './components/Logo';
 // Komponen halaman punya props berbeda-beda, jadi tipe props di sini sengaja longgar.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const lazyPage = <K extends string>(load: () => Promise<Record<K, React.ComponentType<any>>>, key: K) =>
@@ -63,7 +64,13 @@ export const App: React.FC = () => {
     document.title = `${TITLES[route.page] ?? 'Rampung'} · Rampung`;
   }, [route.page]);
 
-  if (booting) return <div className="flex min-h-screen items-center justify-center text-sm text-arang-muted" role="status">Memuat workspace...</div>;
+  if (booting) return (
+    <div className="splash fixed inset-0 flex flex-col items-center justify-center gap-7" role="status" aria-label="Memuat workspace">
+      <LogoMark size={76} tone="white" />
+      <LogoWordmark size={36} tone="white" />
+      <span className="absolute bottom-10 text-[14px] font-medium" style={{ color: 'rgba(255,255,255,.82)' }}>Dari Ide Sampai Rampung.</span>
+    </div>
+  );
 
   let body: React.ReactNode;
   switch (route.page) {

@@ -13,6 +13,8 @@ export interface User {
   color: string; // warna avatar
   email: string;
   phone?: string;
+  /** Jalur foto profil di server, mis. /avatars/u1-….jpg. */
+  avatarUrl?: string;
   role: 'owner' | 'admin' | 'member' | 'client' | 'superadmin';
   title?: string;
 }

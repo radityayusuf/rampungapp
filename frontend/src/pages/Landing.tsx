@@ -75,7 +75,7 @@ const AppMock: React.FC = () => (
       <span className="mx-auto hidden rounded-md bg-white px-10 py-0.5 text-[9.5px] text-[#8A949B] sm:block">rampung.id/proyek/website-batik-lestari</span>
     </div>
     <div className="flex items-center gap-3 border-b border-[#E2E5E1] px-3 py-2">
-      <Logo size={16} />
+      <Logo size={11} />
       <span className="hidden gap-3 text-[10px] font-semibold text-[#3D4750] sm:flex"><span>Pekerjaan Saya</span><span className="rounded bg-[#E3F3F0] px-1.5 text-[#0B5F54]">Proyek</span><span>Dasbor</span></span>
       <span className="rounded bg-[#0B7A6B] px-2 py-0.5 text-[9.5px] font-bold text-white">+ Buat</span>
       <span className="ml-auto hidden items-center gap-1 rounded border border-[#E2E5E1] bg-[#F5F6F4] px-2 py-0.5 text-[9.5px] text-[#8A949B] md:flex"><Search size={9} />Cari apa saja…</span>
@@ -195,7 +195,7 @@ export const Landing: React.FC = () => {
       {/* ── Navigasi ── */}
       <header className="sticky top-0 z-30 border-b border-white/10 bg-[#0E171C]/90 backdrop-blur-md">
         <div className={`${wrap} flex h-[68px] items-center justify-between gap-4`}>
-          <a href={href.landing} aria-label="Rampung"><Logo size={30} dark /></a>
+          <a href={href.landing} aria-label="Rampung"><Logo size={26} dark /></a>
           <nav aria-label="Navigasi utama" className="hidden items-center gap-8 text-[14px] font-medium md:flex">
             {[['#fitur', 'Fitur'], ['#modul', 'Modul'], ['#harga', 'Harga'], ['#faq', 'FAQ']].map(([h, l]) => <a key={h} href={h} onClick={(e) => scrollTo(e, h)} className="transition-colors hover:text-white" style={{ color: '#C9D1D6' }}>{l}</a>)}
           </nav>
@@ -435,7 +435,7 @@ export const Landing: React.FC = () => {
       <footer className="bg-[#0E171C] py-14 text-[14px]" style={{ color: '#AEBAC1' }}>
         <div className={`${wrap} flex flex-col gap-10`}>
           <div className="flex flex-wrap justify-between gap-10">
-            <div className="flex max-w-[340px] flex-col gap-3"><Logo dark /><span className="leading-relaxed">Dari ide sampai rampung. Manajemen proyek, klien, dan keuangan untuk tim Indonesia.</span></div>
+            <div className="flex max-w-[340px] flex-col gap-3"><Logo size={26} dark /><span className="leading-relaxed">Dari ide sampai rampung. Manajemen proyek, klien, dan keuangan untuk tim Indonesia.</span></div>
             <div className="flex flex-wrap gap-16">
               {[['Produk', [['Fitur', '#fitur'], ['Modul', '#modul'], ['Harga', '#harga']]], ['Akun', [['Masuk', href.masuk], ['Daftar gratis', href.daftar], ['Lupa kata sandi', href.lupa]]], ['Bantuan', [['FAQ', '#faq']]]].map(([t, ls]) => (
                 <div key={t as string} className="flex flex-col gap-2.5"><span className="font-bold text-white" style={{ color: '#fff' }}>{t as string}</span>{(ls as string[][]).map(([l, h]) => <a key={l} href={h} onClick={h.startsWith('#') && !h.startsWith('#/') ? (e) => scrollTo(e, h) : undefined} className="transition-colors hover:text-white" style={{ color: '#AEBAC1' }}>{l}</a>)}</div>

@@ -8,7 +8,7 @@ import { passwordProblem } from '../lib/validation';
 const Shell: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
   <div className="flex min-h-screen items-center justify-center bg-canvas px-5 py-12">
     <div className="flex w-full max-w-[420px] flex-col gap-6">
-      <a href={href.landing} className="self-center"><Logo size={32} /></a>
+      <a href={href.landing} className="self-center" aria-label="Rampung — halaman depan"><Logo size={30} /></a>
       <div className="card flex flex-col gap-5 p-7">
         <h1 className="m-0 text-2xl font-extrabold tracking-[-0.4px]">{title}</h1>
         {children}

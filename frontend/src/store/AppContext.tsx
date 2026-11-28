@@ -7,6 +7,7 @@ import type {
 import { getPlanCatalog } from '../lib/plans';
 import { addDays, buildTaskKeys, fmtClock, fmtDate, nextTaskNum, relDay, todayISO, uid, errMsg } from '../lib/format';
 import { TEMPLATES } from '../lib/templates';
+import { prepareAvatar } from '../lib/image';
 import { PLAN_RANK, STATUS } from '../lib/meta';
 import { ApiError, api, clearToken, getToken, setToken } from '../lib/api';
 import type { ApiUser, Change, IntegrationStatus, PullResult } from '../lib/api';
@@ -151,6 +152,9 @@ interface Ctx extends Data {
   removeMemberRecord: (id: string) => void;
   renameMe: (name: string) => Promise<void>;
   updateMyPhone: (phone: string) => void;
+  /** Unggah foto profil (dipotong persegi & dikecilkan di browser). Melempar galat berisi pesan untuk pengguna. */
+  setMyAvatar: (file: File) => Promise<void>;
+  removeMyAvatar: () => Promise<void>;
   /** Status integrasi yang BENAR-BENAR aktif di server (null di mode lokal / sebelum dimuat). */
   integrations: IntegrationStatus | null;
   refreshIntegrations: () => Promise<void>;
@@ -1058,6 +1062,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (clean && !/^[0-9+\-\s()]{8,20}$/.test(clean)) { notify('Nomor tidak valid', 'Gunakan angka, mis. 0812 3456 7890.'); return; }
       patch((d) => ({ members: d.members.map((m) => (m.id === meId ? { ...m, phone: clean || undefined } : m)) }));
       notify(clean ? 'Nomor WhatsApp disimpan' : 'Nomor WhatsApp dihapus', undefined, 'success');
+    },
+    setMyAvatar: async (file) => {
+      const image = await prepareAvatar(file);
+      const { url } = await api.uploadAvatar(image);
+      patch((d) => ({ members: d.members.map((m) => (m.id === meId ? { ...m, avatarUrl: url } : m)) }));
+      notify('Foto profil diperbarui', undefined, 'success');
+    },
+    removeMyAvatar: async () => {
+      await api.deleteAvatar();
+      patch((d) => ({ members: d.members.map((m) => (m.id === meId ? { ...m, avatarUrl: undefined } : m)) }));
+      notify('Foto profil dihapus');
     },
     integrations, refreshIntegrations, refreshNow,
     renameMe: async (name) => {

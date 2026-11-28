@@ -479,7 +479,7 @@ export const AdminConsole: React.FC<{ section: AdminSection }> = ({ section }) =
   const sidebar = (
     <div className="flex h-full flex-col bg-[#0E171C] text-white" style={{ color: '#fff' }}>
       <div className="flex items-center justify-between px-5 pb-4 pt-5">
-        <a href={href.admin()} aria-label="Dasbor platform"><Logo size={28} dark /></a>
+        <a href={href.admin()} aria-label="Dasbor platform"><Logo size={24} dark /></a>
         <button type="button" aria-label="Tutup menu" onClick={() => setMenu(false)} className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border-0 bg-white/10 text-white lg:hidden"><X size={16} /></button>
       </div>
       <div className="mx-5 mb-4 flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] font-semibold" style={{ color: '#D7F0EB' }}><ShieldCheck size={14} className="text-[#5EE0C9]" />Panel Superadmin</div>
